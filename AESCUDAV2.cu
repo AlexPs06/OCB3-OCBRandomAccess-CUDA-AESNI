@@ -84,7 +84,7 @@ void ExpansionKeys128(const unsigned int *k,unsigned long long klen,  unsigned i
         RotWordTemp[0]=keys[i][3]>>16;
         RotWordTemp[1]=keys[i][3]>>8;
         RotWordTemp[2]=keys[i][3];
-        RotWordTemp[3]=keys[i][3]>>24;
+        RotWordTemp[3]=keys[i][3]>>24; 
 
        
 
