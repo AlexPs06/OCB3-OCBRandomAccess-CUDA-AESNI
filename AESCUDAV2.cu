@@ -148,23 +148,10 @@ __device__ void addRoundKey(unsigned int* in, unsigned int * keys, int round)
 
 __device__ void subBytes(unsigned int* in, unsigned char * matrizCajaS)
 {
-    unsigned char temp[16];
-    for (int i=0; i<4; i++){
-        temp[(i*4)+0]=in[0]>>(24-(i*8));
-        temp[(i*4)+1]=in[1]>>(24-(i*8));
-        temp[(i*4)+2]=in[2]>>(24-(i*8));
-        temp[(i*4)+3]=in[3]>>(24-(i*8));
-    }
+    unsigned char * temp;
+    temp = (unsigned char *) in;
 	for (int i = 0; i < 16; i++) { 
         temp[i] = matrizCajaS[ (int) temp[i]]; 
-    }
-    for(int i = 0; i<4; i++){
-        unsigned int temporal = 0;
-        temporal = temporal ^ ( ( (int) temp[0+i]) <<24);
-        temporal = temporal ^ ( ( (int) temp[4+i]) <<16);
-        temporal = temporal ^ ( ( (int) temp[8+i]) <<8);
-        temporal = temporal ^ (   (int) temp[12+i]) ;
-        in[i]=temporal;
     }
 }
 
@@ -172,28 +159,17 @@ __device__ void subBytes(unsigned int* in, unsigned char * matrizCajaS)
 
 __device__ void shiftRows(unsigned int* in, int *shifttab)
 {
-
-    unsigned char temp[16];
-    for (int i=0; i<4; i++){
-        temp[(i*4)+0]=in[0]>>(24-(i*8));
-        temp[(i*4)+1]=in[1]>>(24-(i*8));
-        temp[(i*4)+2]=in[2]>>(24-(i*8));
-        temp[(i*4)+3]=in[3]>>(24-(i*8));
-    }
+    
+    unsigned char * temp;
+    
 
     unsigned char h[16];
-	memcpy(h, temp, 16);
+    temp = (unsigned char *) in;
+	
+    memcpy(h, temp, 16);
+
     for(int i = 0; i < 16; i++){
         temp[i] = h[shifttab[i]];
-    }
-    
-    for(int i = 0; i<4; i++){
-        unsigned int temporal = 0;
-        temporal = temporal ^ ( ( (int) temp[0+i]) <<24);
-        temporal = temporal ^ ( ( (int) temp[4+i]) <<16);
-        temporal = temporal ^ ( ( (int) temp[8+i]) <<8);
-        temporal = temporal ^ (   (int) temp[12+i]) ;
-        in[i]=temporal;
     }
 }
 __device__ unsigned char GF2Redution(unsigned short in ){
@@ -281,35 +257,41 @@ __device__ void mixColumns(unsigned char* in ){
 }
 
 __device__ void subBytesMixColumns(unsigned int* in, int * T1, int * T2, int * T3, int * T4){
-	
-
-    for (int i = 0; i < 4; i++){
+	unsigned char * temp;
+    temp = (unsigned char *) in;
+    for (int i = 0; i < 16; i=i+4){
         // unsigned char tempT1[4]={ T1[(int) in[0+i]] >> 24 & ff   , T1[(int) in[0+i]] >> 16 ,T1[(int) in[0+i]] >> 8 , T1[(int) in[0+i]] };
         // unsigned char tempT11[4] = { (unsigned char) (T1[(int) in[0+i]] >> 24), (unsigned char) (T1[(int) in[0+i]] >> 16), (unsigned char) (T1[(int) in[0+i]] >> 8), (unsigned char) (T1[(int) in[0+i] ])  }; 
         // unsigned char tempT12[4]={ (unsigned char) (T2[(int) in[4+i]] >> 24), (unsigned char) (T2[(int) in[4+i]] >> 16), (unsigned char) (T2[(int) in[4+i]] >> 8), (unsigned char) (T2[(int) in[4+i] ]) };
         // unsigned char tempT13[4]={ (unsigned char) (T3[(int) in[8+i]] >> 24), (unsigned char) (T3[(int) in[8+i]] >> 16), (unsigned char) (T3[(int) in[8+i]] >> 8), (unsigned char) (T3[(int) in[8+i] ]) };
         // unsigned char tempT14[4]={ (unsigned char) (T4[(int) in[12+i]] >> 24), (unsigned char) (T4[(int) in[12+i]] >> 16), (unsigned char) (T4[(int) in[12+i]] >> 8), (unsigned char) (T4[(int) in[12+i] ]) };
         
-        int tempT1 = T1[(int) in[0+i]];
-        int tempT2 = T2[(int) in[4+i]];
-        int tempT3 = T3[(int) in[8+i]];
-        int tempT4 = T4[(int) in[12+i]];
+        int tempT1 = T1[(int) temp[i+3]];
+        int tempT2 = T2[(int) temp[i+2]];
+        int tempT3 = T3[(int) temp[i+1]];
+        int tempT4 = T4[(int) temp[i] ];
 
+        // printf("%x \n", temp[i+3] );
+        // printf("%x \n", temp[i+2] );
+        // printf("%x \n", temp[i+1] );
+        // printf("%x \n", temp[i] );
         
 
 
         int tempT5 = tempT1 ^ tempT2 ^ tempT3 ^ tempT4; 
+        // printf("%x \n", tempT5 );
+        in[i/4] = tempT5;
+        // printf("%x \n", in[i] );
+
         // tempT11[0] = tempT11[0] ^ tempT12[0] ^ tempT13[0] ^ tempT14[0];
         // tempT11[1] = tempT11[1] ^ tempT12[1] ^ tempT13[1] ^ tempT14[1];
         // tempT11[2] = tempT11[2] ^ tempT12[2] ^ tempT13[2] ^ tempT14[2];
         // tempT11[3] = tempT11[3] ^ tempT12[3] ^ tempT13[3] ^ tempT14[3];
         
 
-        in[0+i] = tempT5 >> 24;  
-        in[4+i] = tempT5 >> 16;
-        in[8+i] = tempT5 >> 8; 
-        in[12+i] = tempT5 ;
+        
     }
+    // imprimiArregloCudaInt(4,in );
 }
 
 __device__ void AES_init( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3, int *T4){
@@ -441,7 +423,12 @@ __global__ void Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys
             // imprimiArregloCuda(256,matrizCajaS );
         }
         
-        int shifttab[16]= {0, 1, 2, 3, 5, 6, 7, 4, 10, 11, 8, 9, 15, 12, 13, 14};
+        int shifttab[16]= {
+            12, 9, 6, 3,   
+            0, 13, 10, 7,  
+            4, 1, 14, 11,
+            8, 5, 2, 15 
+            };
         
         __syncthreads();
         unsigned int block[4];
@@ -460,18 +447,25 @@ __global__ void Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys
         // // imprimiArregloCuda(16,&keys[0] );
 
         for (int j = 1; j < 10; j++){
+            // subBytes(block, matrizCajaS);
+            
+
             shiftRows(block, shifttab);
-            //subBytes(block, matrizCajaS);
+
+
+            
             //mixColumns(block);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
+            // imprimiArregloCudaInt(4,block );
+
             addRoundKey( block, keys,j);
         }
-        // subBytes(block, matrizCajaS);
-        // shiftRows(block, shifttab);
-        // addRoundKey( block, keys,10);
-        // for (int i = 0 ; i< 16 ; i++){
-        //     m[index].block[i]= block[i];
-        // }
+        subBytes(block, matrizCajaS);
+        shiftRows(block, shifttab);
+        addRoundKey( block, keys,10);
+        for (int i = 0 ; i< 4 ; i++){
+            m[index].block[i]= block[i];
+        }
 
     }
 }
@@ -514,7 +508,6 @@ int main(int argc, char **argv) {
         // 0x16,0xa6,0x88,0x3c
 
     const unsigned int k[4] ={ 
-        
         0x2b7e1516,
         0x28aed2a6,
         0xabf71588,
@@ -589,8 +582,8 @@ int main(int argc, char **argv) {
 
     AES128Encrypt(aes_block_array, mlen, &keys[0][0],result);
 
-    // imprimiArreglo(16,aes_block_array[0].block);
-    // cout<<endl;
+    imprimiArreglo(4,aes_block_array[0].block);
+    cout<<endl;
 
     // imprimiArreglo(16,aes_block_array[1].block);
     // cout<<endl;

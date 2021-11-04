@@ -259,7 +259,10 @@ __device__ void subBytesMixColumns(unsigned char* in, int * T1, int * T2, int * 
         in[4+i] = tempT5 >> 16;
         in[8+i] = tempT5 >> 8; 
         in[12+i] = tempT5 ;
+
     }
+    // imprimiArregloCuda(16,block );
+
 }
 
 __device__ void AES_init( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3, int *T4){
@@ -409,7 +412,10 @@ __global__ void Encrypt(aesBlock *m, unsigned long long mlen, unsigned char *key
             shiftRows(block, shifttab);
             //subBytes(block, matrizCajaS);
             //mixColumns(block);
+
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
+            // imprimiArregloCuda(16,block );
+            
             addRoundKey( block, keys,j);
         }
         subBytes(block, matrizCajaS);
@@ -503,7 +509,7 @@ int main(int argc, char **argv) {
         0xf6,0x30,0x98,0x07,
         0xa8,0x8d,0xa2,0x34
     };
-    unsigned long long mlen = 64;
+    unsigned long long mlen = 16;
     unsigned char keys[11][16];
 
     int numBlocks = mlen/16;
@@ -534,17 +540,17 @@ int main(int argc, char **argv) {
 
     AES128Encrypt(aes_block_array, mlen, &keys[0][0],result);
 
-    imprimiArreglo(16,aes_block_array[0].block);
-    cout<<endl;
+    // imprimiArreglo(16,aes_block_array[0].block);
+    // cout<<endl;
 
-    imprimiArreglo(16,aes_block_array[1].block);
-    cout<<endl;
+    // imprimiArreglo(16,aes_block_array[1].block);
+    // cout<<endl;
 
-    imprimiArreglo(16,aes_block_array[2].block);
-    cout<<endl;
+    // imprimiArreglo(16,aes_block_array[2].block);
+    // cout<<endl;
 
-    imprimiArreglo(16,aes_block_array[3].block);
-    cout<<endl;
+    // imprimiArreglo(16,aes_block_array[3].block);
+    // cout<<endl;
     
     
     
