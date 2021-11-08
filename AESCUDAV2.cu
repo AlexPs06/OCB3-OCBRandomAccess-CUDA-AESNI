@@ -275,21 +275,15 @@ __device__ void subBytesMixColumns(unsigned int* in, int * T1, int * T2, int * T
         // printf("%x \n", temp[i+2] );
         // printf("%x \n", temp[i+1] );
         // printf("%x \n", temp[i] );
-        
-
 
         int tempT5 = tempT1 ^ tempT2 ^ tempT3 ^ tempT4; 
         // printf("%x \n", tempT5 );
         in[i/4] = tempT5;
         // printf("%x \n", in[i] );
-
         // tempT11[0] = tempT11[0] ^ tempT12[0] ^ tempT13[0] ^ tempT14[0];
         // tempT11[1] = tempT11[1] ^ tempT12[1] ^ tempT13[1] ^ tempT14[1];
         // tempT11[2] = tempT11[2] ^ tempT12[2] ^ tempT13[2] ^ tempT14[2];
         // tempT11[3] = tempT11[3] ^ tempT12[3] ^ tempT13[3] ^ tempT14[3];
-        
-
-        
     }
     // imprimiArregloCudaInt(4,in );
 }
@@ -386,8 +380,6 @@ __device__ void AES_init( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3
         0xe1e138d9, 0xf8f813eb, 0x9898b32b, 0x11113322, 0x6969bbd2, 0xd9d970a9, 0x8e8e8907, 0x9494a733, 0x9b9bb62d, 0x1e1e223c, 0x87879215, 0xe9e920c9, 0xcece4987, 0x5555ffaa, 0x28287850, 0xdfdf7aa5, 
         0x8c8c8f03, 0xa1a1f859, 0x89898009, 0xd0d171a, 0xbfbfda65, 0xe6e631d7, 0x4242c684, 0x6868b8d0, 0x4141c382, 0x9999b029, 0x2d2d775a, 0xf0f111e, 0xb0b0cb7b, 0x5454fca8, 0xbbbbd66d, 0x16163a2c
     };
-
-    
     // T1 = T1Temp;
     // T2 = T2Temp;
     // T3 = T3Temp;
@@ -440,25 +432,15 @@ __global__ void Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys
         }
         
         addRoundKey( block, keys,0);
-
-        
-        
         // // imprimiArregloCuda(16,block );
         // // imprimiArregloCuda(16,&keys[0] );
-
         for (int j = 1; j < 10; j++){
             // subBytes(block, matrizCajaS);
-            
-
             shiftRows(block, shifttab);
-
-
-            
             //mixColumns(block);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
             // imprimiArregloCudaInt(4,block );
-
-            addRoundKey( block, keys,j);
+            addRoundKey( block, keys,j); // 
         }
         subBytes(block, matrizCajaS);
         shiftRows(block, shifttab);
