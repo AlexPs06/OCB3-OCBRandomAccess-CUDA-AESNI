@@ -436,7 +436,7 @@ __global__ void Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys
     int index2 = blockDim.x*blockIdx.x;
     
     
-    if( index<mlen/4){
+    if( index<mlen/16){
     // printf("%i \n",index);
 
     // printf("%i \n",threadIdx.x);
@@ -496,8 +496,8 @@ void AES128Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys, uns
     unsigned int *resultCuda;
     // printf("%x \n",keys[1167]);
 
-    int sizeMessage = (mlen/4)*sizeof(class aesBlock);
-    int sizeResult = (mlen/4)*sizeof(unsigned int);
+    int sizeMessage = (mlen/16)*sizeof(class aesBlock);
+    int sizeResult = (mlen/16)*sizeof(unsigned int);
     int sizeKeys = 11*4*sizeof(unsigned int);
 
     cudaMalloc(&mCuda, sizeMessage);
@@ -507,7 +507,7 @@ void AES128Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys, uns
     cudaMemcpy(mCuda,m,sizeMessage,cudaMemcpyDefault);
     cudaMemcpy(keysCuda,keys,sizeKeys,cudaMemcpyDefault);
 
-    dim3 nb( (unsigned int) ceil((double) mlen/4.0) ) ; 
+    dim3 nb( (unsigned int) ceil((double) mlen/16.0) ) ; 
     dim3 nt(2); 
 
     Encrypt<<<nb, nt>>>(mCuda, mlen,keysCuda, resultCuda);
@@ -527,11 +527,17 @@ int main(int argc, char **argv) {
         0xabf71588,
         0x09cf4f3c
     };
-    const unsigned int m[4] ={ 
-        0x3925841d,
-        0x02dc09fb,
-        0xdc118597,
-        0x196a0b32
+    const unsigned int m[8] ={ 
+        0x3925841d ,
+        0x02dc09fb ,
+        0xdc118597 ,
+        0x196a0b32 ,
+
+        0x30a25d6a, 
+        0x5c95dde2, 
+        0x390758b1, 
+        0x50ff7038
+
     };
 
     unsigned int result[64] ={ 
@@ -555,24 +561,19 @@ int main(int argc, char **argv) {
         0xf6,0x30,0x98,0x07,
         0xa8,0x8d,0xa2,0x34
     };
-    unsigned long long mlen = 4;
+    unsigned long long mlen = 32;
     unsigned int keys[11][4];
 
     int numBlocks = mlen/16;
     aesBlock* aes_block_array;
-    aes_block_array = new aesBlock [1];
+    aes_block_array = new aesBlock [numBlocks];
     
-    
-
-    for(int i = 0; i<1; i++){
+    for(int i = 0; i<numBlocks; i++){
         for (int j = 0; j<4;j++){
             aes_block_array[i].block[j]=  m[(i*4)+j];
             // printf("0x%x\n",m[(i*4)+j] );
         }
     }
-    
-    
-    
 
     // imprimiArreglo(16,aes_block_array[0].block);
     // printf("%x \n", aes_block_array[0].block[0] );
@@ -595,8 +596,10 @@ int main(int argc, char **argv) {
 
     AES128Encrypt(aes_block_array, mlen, &keys[0][0],result);
 
-    imprimiArreglo(4,aes_block_array[0].block);
-    cout<<endl;
+    for(int i = 0; i<numBlocks; i++){
+        imprimiArreglo(4,aes_block_array[i].block);
+        cout<<endl;
+    }
 
     // imprimiArreglo(16,aes_block_array[1].block);
     // cout<<endl;
