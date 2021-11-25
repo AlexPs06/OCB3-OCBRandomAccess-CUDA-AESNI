@@ -32,57 +32,22 @@ unsigned char matrizCajaS[256]={
     0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 };
-void leerPGM(unsigned char imagen[],char foto[]){
-    FILE *arch;
-	unsigned char c,c1,c2;
 
-	arch=fopen(foto,"rb");
-	c1=fgetc(arch);
-	c2=fgetc(arch);
-    if (c1!='P' || c2!='5'){
-		printf("\nFormato no corresponde a una Imagen\n");
-		exit (0);
+void imprimiArreglo(int tam, unsigned int *keys ){
+    for (int i = 0; i<tam; i++){
+        printf("%x \n", keys[i] );
     }
-	c=fgetc(arch);
-	fscanf(arch,"%d",&columna);
-    c=fgetc(arch);
-
-	fscanf(arch,"%d",&fila);
-    while (c!='\n')
-		c=fgetc(arch);
-	fscanf(arch,"%d",&gris);
-
-    cout<<c1<<c2<<endl;
-    cout<<"fila "<<fila<<endl;
-    cout<<"columna "<<columna<<endl;
-    cout<<"gris "<<gris<<endl;
-    int k = 0;
-	for(int i=0; i<fila; i++)
-		for(int j=0; j<columna; j++)
-		{
-			c=fgetc(arch);
-            int temp = (int)c ;
-            imagenGlobal[i][j] = temp;
-            imagen[k]=(unsigned char)c;
-            k++;
-		}
-        fclose(arch);
-        
+    printf("\n---------------------------\n");
 }
-
-void ExpansionKeys128(const unsigned int *k,unsigned long long klen,  unsigned int keys[11][4] ){
+void ExpansionKeys128( unsigned int *k,unsigned long long klen,  unsigned int keys[11][4] ){
     unsigned char RotWordTemp[4];
     const unsigned int matrizRcon[10]={ 0x01000000, 0x02000000, 0x04000000, 0x08000000, 0x10000000, 0x20000000, 0x40000000, 0x80000000, 0x1b000000, 0x36000000};
-    // *keys[0] =  *k;
     memcpy(&keys[0], k, 16);
     for(int i = 0; i<10; i++){
         RotWordTemp[0]=keys[i][3]>>16;
         RotWordTemp[1]=keys[i][3]>>8;
         RotWordTemp[2]=keys[i][3];
         RotWordTemp[3]=keys[i][3]>>24; 
-
-       
-
         
         for(int j = 0;  j < 4; j++ ){
             RotWordTemp[j] = matrizCajaS[ (int) RotWordTemp[j] ];
@@ -95,45 +60,25 @@ void ExpansionKeys128(const unsigned int *k,unsigned long long klen,  unsigned i
         
         keys[i+1][0] =  RotWord ^ keys[i][0];
         keys[i+1][0] = keys[i+1][0] ^ matrizRcon[i];
-        
         for(int x = 1;  x < 4; x++ ){
-            for(int j = 0;  j < 4; j++){
-                keys[i+1][(j)+x ] =  keys[i+1][j+x-1] ^ keys[i][(j)+x];
-            }
+            keys[i+1][x] =  keys[i+1][x-1] ^ keys[i][x];
         }
-        
     }
+}
 
-}
-void imprimiArreglo(int tam, unsigned int *keys ){
-    
-    for (int i = 0; i<tam; i++){
-        // cout<< hex(keys[i]) <<" ";
-        
-        printf("%x \n", keys[i] );
-        
-    }
-    printf("\n---------------------------\n");
-}
 
 
 __device__ void imprimiArregloCuda(int tam,unsigned char *keys ){
     for (int i = 0; i<tam; i++){
-        // cout<< hex(keys[i]) <<" ";
         if(i%4==0)
             printf("\n");
         printf("%x ", keys[i] & 0xff);
-        
     }
 }
 __device__ void imprimiArregloCudaInt(int tam,unsigned int *keys ){
     printf("----------------\n" );
-    
     for (int i = 0; i<tam; i++){
-        // cout<< hex(keys[i]) <<" ";
-      
         printf("%x \n", keys[i] );
-        
     }
 }
 __device__ void XOR_128(unsigned int* A, unsigned int * B )
@@ -167,11 +112,8 @@ __device__ void subBytes(unsigned int* in, unsigned char * matrizCajaS)
 __device__ void shiftRows(unsigned int* in, int *shifttab){
     
     unsigned char * temp;
-    
-
     unsigned char h[16];
     temp = (unsigned char *) in;
-	
     memcpy(h, temp, 16);
 
     for(int i = 0; i < 16; i++){
@@ -266,37 +208,23 @@ __device__ void InvAddRoundKey(unsigned int* in, unsigned int * keys, int round)
         0x0b, 0x0d, 0x09, 0x0e
 
     };
-	
     memcpy(h, &keys[round*4], 16);
-    
-    // imprimiArregloCudaInt(4,&keys[round*4] );
     for (int i = 0; i < 4; i++) { 
         for (int j = 0; j < 4; j++) { 
             unsigned char temp = 0;
             for(int k = 0; k < 4; k++ ){
                 temp= multiplicacionENGF2(IMC[ (j*4)+k ] , h[ (i*4) +3-k ]) ^ temp;
             }
-            // printf("%x \n", temp & 0xff);
             resultado[ (i*4) +3-j ] = temp;
         }
     }
-    // imprimiArregloCuda(16,resultado );
     unsigned int * matrizXOR;
     matrizXOR = (unsigned int *) resultado;
     for (int i = 0; i < 4; i++) { 
         in[i] = in[i] ^ matrizXOR[i];
     }
-    // imprimiArregloCudaInt(4,in );
-
-    // imprimiArregloCudaInt(4,in );
-
 }
 __device__ void mixColumns(unsigned char* in ){
-    // unsigned char T1[4]={in[0],in[4],in[8],in[12] };
-    // unsigned char T2[4]={in[1],in[5],in[9],in[13] };
-    // unsigned char T3[4]={in[2],in[6],in[10],in[14] };
-    // unsigned char T4[4]={in[3],in[7],in[11],in[15] };
-
     for (int i = 0; i < 4; i++){
         unsigned char T1[4]={in[0+i],in[0+i],in[0+i],in[0+i] };
         unsigned char T2[4]={in[4+i],in[4+i],in[4+i],in[4+i] };
@@ -314,14 +242,11 @@ __device__ void mixColumns(unsigned char* in ){
 
         T4[2] =  multiplicacionENGF2(3, T4[2]);
         T4[3] =  multiplicacionENGF2(2, T4[3]);
-
         
         T1[0] = T1[0] ^ T2[0] ^ T3[0] ^ T4[0];
         T1[1] = T1[1] ^ T2[1] ^ T3[1] ^ T4[1];
         T1[2] = T1[2] ^ T2[2] ^ T3[2] ^ T4[2];
         T1[3] = T1[3] ^ T2[3] ^ T3[3] ^ T4[3];
-        
-
 
         in[0+i] = T1[0];  
         in[4+i] = T1[1];
@@ -335,32 +260,14 @@ __device__ void subBytesMixColumns(unsigned int* in, int * T1, int * T2, int * T
 	unsigned char * temp;
     temp = (unsigned char *) in;
     for (int i = 0; i < 16; i=i+4){
-        // unsigned char tempT1[4]={ T1[(int) in[0+i]] >> 24 & ff   , T1[(int) in[0+i]] >> 16 ,T1[(int) in[0+i]] >> 8 , T1[(int) in[0+i]] };
-        // unsigned char tempT11[4] = { (unsigned char) (T1[(int) in[0+i]] >> 24), (unsigned char) (T1[(int) in[0+i]] >> 16), (unsigned char) (T1[(int) in[0+i]] >> 8), (unsigned char) (T1[(int) in[0+i] ])  }; 
-        // unsigned char tempT12[4]={ (unsigned char) (T2[(int) in[4+i]] >> 24), (unsigned char) (T2[(int) in[4+i]] >> 16), (unsigned char) (T2[(int) in[4+i]] >> 8), (unsigned char) (T2[(int) in[4+i] ]) };
-        // unsigned char tempT13[4]={ (unsigned char) (T3[(int) in[8+i]] >> 24), (unsigned char) (T3[(int) in[8+i]] >> 16), (unsigned char) (T3[(int) in[8+i]] >> 8), (unsigned char) (T3[(int) in[8+i] ]) };
-        // unsigned char tempT14[4]={ (unsigned char) (T4[(int) in[12+i]] >> 24), (unsigned char) (T4[(int) in[12+i]] >> 16), (unsigned char) (T4[(int) in[12+i]] >> 8), (unsigned char) (T4[(int) in[12+i] ]) };
-        
         int tempT1 = T1[(int) temp[i+3]];
         int tempT2 = T2[(int) temp[i+2]];
         int tempT3 = T3[(int) temp[i+1]];
         int tempT4 = T4[(int) temp[i] ];
 
-        // printf("%x \n", temp[i+3] );
-        // printf("%x \n", temp[i+2] );
-        // printf("%x \n", temp[i+1] );
-        // printf("%x \n", temp[i] );
-
         int tempT5 = tempT1 ^ tempT2 ^ tempT3 ^ tempT4; 
-        // printf("%x \n", tempT5 );
         in[i/4] = tempT5;
-        // printf("%x \n", in[i] );
-        // tempT11[0] = tempT11[0] ^ tempT12[0] ^ tempT13[0] ^ tempT14[0];
-        // tempT11[1] = tempT11[1] ^ tempT12[1] ^ tempT13[1] ^ tempT14[1];
-        // tempT11[2] = tempT11[2] ^ tempT12[2] ^ tempT13[2] ^ tempT14[2];
-        // tempT11[3] = tempT11[3] ^ tempT12[3] ^ tempT13[3] ^ tempT14[3];
     }
-    // imprimiArregloCudaInt(4,in );
 }
 
 __device__ void AES_init( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3, int *T4){
@@ -455,10 +362,6 @@ __device__ void AES_init( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3
         0xe1e138d9, 0xf8f813eb, 0x9898b32b, 0x11113322, 0x6969bbd2, 0xd9d970a9, 0x8e8e8907, 0x9494a733, 0x9b9bb62d, 0x1e1e223c, 0x87879215, 0xe9e920c9, 0xcece4987, 0x5555ffaa, 0x28287850, 0xdfdf7aa5, 
         0x8c8c8f03, 0xa1a1f859, 0x89898009, 0xd0d171a, 0xbfbfda65, 0xe6e631d7, 0x4242c684, 0x6868b8d0, 0x4141c382, 0x9999b029, 0x2d2d775a, 0xf0f111e, 0xb0b0cb7b, 0x5454fca8, 0xbbbbd66d, 0x16163a2c
     };
-    // T1 = T1Temp;
-    // T2 = T2Temp;
-    // T3 = T3Temp;
-    // T4 = T4Temp;
     for(int i=0; i<256;i++){
         matrizCajaS[i] = matrizCajaSTemp[i];
         T1[i] = T1Temp[i];
@@ -466,8 +369,6 @@ __device__ void AES_init( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3
         T3[i] = T3Temp[i];
         T4[i] = T4Temp[i];
     }
-    // printf("%x estoy en init\n",&matrizCajaS[0]);
-    // printf("%x\n",&matrizCajaSTemp);
 }
 __device__ void AES_init_decrypt( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3, int *T4){
     unsigned char matrizCajaSTemp[256]={
@@ -570,7 +471,6 @@ __device__ void AES_init_decrypt( unsigned char  *matrizCajaS, int *T1, int *T2,
     }
 }
 __device__ void AES_128(aesBlock *m, unsigned long long mlen, unsigned int *keys, int index){
-    // printf("%i \n",threadIdx.x);
     __shared__ unsigned char matrizCajaS[256];
     __shared__ int T1[256]; 
     __shared__ int T2[256]; 
@@ -578,8 +478,6 @@ __device__ void AES_128(aesBlock *m, unsigned long long mlen, unsigned int *keys
     __shared__ int T4[256];
         if(threadIdx.x == 0 ){
             AES_init(matrizCajaS, T1, T2, T3, T4);
-            // printf("%x estoy en encrypt\n",&matrizCajaS[0]);
-            // imprimiArregloCuda(256,matrizCajaS );
         }
         
         int shifttab[16]= {
@@ -592,21 +490,17 @@ __device__ void AES_128(aesBlock *m, unsigned long long mlen, unsigned int *keys
         __syncthreads();
         unsigned int block[4];
 
-        
-        // memcpy(block,)
         for (int i = 0 ; i< 4 ; i++){
             block[i]= m[index].block[i];
         }
         
         addRoundKey( block, keys,0);
-        // // imprimiArregloCuda(16,block );
-        // // imprimiArregloCuda(16,&keys[0] );
         for (int j = 1; j < 10; j++){
             // subBytes(block, matrizCajaS);
             shiftRows(block, shifttab);
             //mixColumns(block);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
-            // imprimiArregloCudaInt(4,block );
+
             addRoundKey( block, keys,j); // 
         }
         subBytes(block, matrizCajaS);
@@ -615,11 +509,9 @@ __device__ void AES_128(aesBlock *m, unsigned long long mlen, unsigned int *keys
         for (int i = 0 ; i< 4 ; i++){
             m[index].block[i]= block[i];
         }
-        // imprimiArregloCudaInt(4,result );
 }
 
 __device__ void OCBAESDelta2Rounds(unsigned int block[4],  unsigned int *keys){
-    // printf("%i \n",threadIdx.x);
         unsigned char matrizCajaS[256];
         int T1[256]; 
         int T2[256]; 
@@ -644,9 +536,6 @@ __device__ void OCBAESDelta2Rounds(unsigned int block[4],  unsigned int *keys){
 }
 
 __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys, int index ){
-    // printf("%i \n",index);
-
-    // printf("%i \n",threadIdx.x);
     __shared__ unsigned char matrizCajaS[256];
     __shared__ int T1[256]; 
     __shared__ int T2[256]; 
@@ -654,8 +543,6 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned in
     __shared__ int T4[256];
         if(threadIdx.x == 0 ){
             AES_init_decrypt(matrizCajaS, T1, T2, T3, T4);
-            // printf("%x estoy en encrypt\n",&matrizCajaS[0]);
-            // imprimiArregloCuda(256,matrizCajaS );
         }
         
         int shifttab[16]= {
@@ -668,15 +555,11 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned in
         __syncthreads();
         unsigned int block[4];
 
-        
-        // memcpy(block,)
         for (int i = 0 ; i< 4 ; i++){
             block[i]= m[index].block[i];
         }
-     
         
         addRoundKey( block, keys,10);
-        // // imprimiArregloCuda(16,&keys[0] );
         for (int j = 9; j > 0; j--){
             // subBytes(block, matrizCajaS);
             shiftRows(block, shifttab);
@@ -685,16 +568,10 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned in
 
             InvAddRoundKey(block, keys,j);
 
-
         }
-
         subBytes(block, matrizCajaS);
         shiftRows(block, shifttab);
-
-
         addRoundKey( block, keys,0);
-        // imprimiArregloCudaInt(4,block );
-        
         for (int i = 0 ; i< 4 ; i++){
             m[index].block[i]= block[i];
         }
@@ -702,20 +579,14 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned in
 }
 __global__ void Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys){
     int index = blockDim.x*blockIdx.x + threadIdx.x;
-    // int index2 = blockDim.x*blockIdx.x;
-    
-    
     if( index<mlen/16){
-    // printf("%i \n",index);
         AES_128(m, mlen, keys,index);
-
     }
 }
 
 void AES128Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys){
     aesBlock *mCuda;
     unsigned int *keysCuda;
-    // printf("%x \n",keys[1167]);
 
     int sizeMessage = (mlen/16)*sizeof(class aesBlock);
     int sizeKeys = 11*4*sizeof(unsigned int);
@@ -738,9 +609,7 @@ void AES128Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys){
 
 __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned long long mlen, unsigned long long deltalen, unsigned int *keys){
     int index = blockDim.x*blockIdx.x + threadIdx.x;
-    // int index2 = blockDim.x*blockIdx.x;
     if( index<mlen/16){
-    // if( index==0){
 
         unsigned long long deltaIndex = floor( (double) index/255);
         
@@ -758,7 +627,9 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned l
         OCBAESDelta2Rounds(deltaBlock, keys);
 
         XOR_128(m[index].block,deltaBlock);
+
         AES_128(m, mlen, keys,index);
+
         XOR_128(m[index].block,deltaBlock);
 
     }
@@ -766,10 +637,7 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned l
 
 __global__ void OCB128DecryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned long long mlen, unsigned long long deltalen, unsigned int *keys){
     int index = blockDim.x*blockIdx.x + threadIdx.x;
-    // int index2 = blockDim.x*blockIdx.x;
     if( index<mlen/16){
-    // if( index==0){
-
         unsigned long long deltaIndex = floor( (double) index/255);
         
         __syncthreads();
@@ -788,18 +656,14 @@ __global__ void OCB128DecryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned l
         XOR_128(m[index].block,deltaBlock);
 
         AES_128Decrypt(m, mlen, keys,index);
-        // imprimiArregloCudaInt(4,m[index].block );
         
         XOR_128(m[index].block,deltaBlock);
-
-
     }
 }
 void OCBRandomAccess(aesBlock *m,aesBlock *delta,const unsigned long long mlen, unsigned long long deltalen, unsigned int *keys){
     aesBlock *mCuda;
     aesBlock *deltaCuda;
     unsigned int *keysCuda;
-    // printf("%x \n",keys[1167]);
 
     int sizeMessage = (mlen/16)*sizeof(class aesBlock);
     int sizeDelta = (deltalen)*sizeof(class aesBlock);
@@ -827,7 +691,6 @@ void OCBRandomAccessDecrypt(aesBlock *m,aesBlock *delta,const unsigned long long
     aesBlock *mCuda;
     aesBlock *deltaCuda;
     unsigned int *keysCuda;
-    // printf("%x \n",keys[1167]);
 
     int sizeMessage = (mlen/16)*sizeof(class aesBlock);
     int sizeDelta = (deltalen)*sizeof(class aesBlock);
@@ -851,6 +714,9 @@ void OCBRandomAccessDecrypt(aesBlock *m,aesBlock *delta,const unsigned long long
 
     cudaFree(mCuda); cudaFree(keysCuda);  
 }
+
+
+
 void getDelta(const unsigned int nonce[4],const unsigned long long mlen, aesBlock* delta,unsigned int *keys,unsigned long long deltalen ){
     
     for(int i = 0; i<deltalen; i++){
@@ -870,125 +736,204 @@ void getDelta(const unsigned int nonce[4],const unsigned long long mlen, aesBloc
 
 }
 
-int main(int argc, char **argv) {
-  
-
-        // 0x2b,0x28,0xab,0x09,
-        // 0x7e,0xae,0xf7,0xcf,
-        // 0x15,0xd2,0x15,0x4f,
-        // 0x16,0xa6,0x88,0x3c
-
-    const unsigned int k[4] ={ 
-        0x2b7e1516,
-        0x28aed2a6,
-        0xabf71588,
-        0x09cf4f3c
-    };
-        // 0x32,0x88,0x31,0xe0,
-        // 0x43,0x5a,0x31,0x37,
-        // 0xf6,0x30,0x98,0x07,
-        // 0xa8,0x8d,0xa2,0x34,
-    const unsigned int nonce[4] ={ 
-        0x3243f6a8,
-        0X885a308d,
-        0x313198a2,
-        0xe0370734,
-    };
-
-        // 0x32,0x88,0x31,0xe0,
-        // 0x43,0x5a,0x31,0x37,
-        // 0xf6,0x30,0x98,0x07,
-        // 0xa8,0x8d,0xa2,0x34,
-    const unsigned int m[8] ={ 
-        0x3032ee6f, 
-        0x887fdf09, 
-        0x6cfe75e7, 
-        0x7fad48b6, 
-        
-        0x69f310b0, 
-        0x5e4505c8, 
-        0x3edb9d8d, 
-        0xa7eab181 
-    };
-
-    unsigned int result[64] ={ 
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
-
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
-
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
-
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34
-    };
-    unsigned long long mlen = 32;
-    unsigned int keys[11][4];
-
-    int numBlocks = mlen/16;
-    aesBlock* aes_block_array;
-    aes_block_array = new aesBlock [numBlocks];
-    
+void copyMessageToAESBlock(aesBlock* encrypt, int numBlocks,const unsigned int m2[]){
     for(int i = 0; i<numBlocks; i++){
         for (int j = 0; j<4;j++){
-            aes_block_array[i].block[j]=  m[(i*4)+j];
-            // printf("0x%x\n",m[(i*4)+j] );
+            encrypt[i].block[j]=  m2[(i*4)+j];
         }
     }
-    ExpansionKeys128(k,1, keys);
+}
+void unsignedCharArrayTounsignedIntArray(const unsigned char *in,unsigned int *out, unsigned long long len){
+    
+    unsigned char h[len];
+    unsigned char temp[len];
+	
+    memcpy(h, in, len);
+    memcpy(temp, in, len);
+    
+    int shifttab[16]= {
+        12, 8, 4, 0,   
+        13, 9, 5, 1,  
+        14, 10, 6, 2,
+        15, 11, 7, 3 
+        };
+
+    for(int i = 0; i < len; i++){
+        int index = shifttab[i%16]+(floor(i/16)*16 );
+        temp[i] = h[index];
+    }
+    unsigned int * temp2;
+    temp2 = (unsigned int *) temp;
+    for(int i = 0; i < len/4; i++){
+        out[i]=temp2[i];
+    }
+}
+int crypto_aead_encrypt(
+	unsigned char *c, unsigned long long *clen,
+	const unsigned char *m, unsigned long long mlen,
+	const unsigned char *ad, unsigned long long adlen,
+	const unsigned char *nsec,
+	const unsigned char *npub,
+	const unsigned char *k)
+{
 
 
     unsigned long long bloques = (unsigned long long) ceil( (double) mlen/16.0); //cada 4080 salta en 1 el delta
     unsigned long long deltalen = (unsigned long long) ceil( (double) bloques/255.0);
+    int numBlocks = mlen/16;
     aesBlock* delta;
     delta = new aesBlock [deltalen];
-    getDelta(nonce , mlen, delta, &keys[0][0],deltalen);
-    OCBRandomAccessDecrypt(aes_block_array, delta, mlen, deltalen, &keys[0][0]);
-
-    cout<<"Decrypt"<<endl;
-
-    for(int i = 0; i<numBlocks; i++){
-        imprimiArreglo(4,aes_block_array[i].block);
-        cout<<endl;
-    }
-    
-    
-    const unsigned int m2[8] ={ 
+    aesBlock* encrypt;
+    encrypt = new aesBlock [numBlocks];
+    const unsigned int nonce[4] = {
         0x3243f6a8,
         0X885a308d,
         0x313198a2,
         0xe0370734,
-        
-        0x3243f6a8,
-        0X885a308d,
-        0x313198a2,
-        0xe0370735
     };
-    aesBlock* encrypt;
-    encrypt = new aesBlock [numBlocks];
+    unsigned int message[mlen/4];
+
+    unsigned int keys[11][4];
+    unsigned int key[4];
+    unsignedCharArrayTounsignedIntArray(k,key,16);
+    unsignedCharArrayTounsignedIntArray(m,message,mlen);
     
     for(int i = 0; i<numBlocks; i++){
         for (int j = 0; j<4;j++){
-            encrypt[i].block[j]=  m2[(i*4)+j];
-            // printf("0x%x\n",m[(i*4)+j] );
+            encrypt[i].block[j]=  message[(i*4)+j];
         }
     }
+
+
+    ExpansionKeys128(key,1, keys);
+    getDelta(nonce , mlen, delta, &keys[0][0],deltalen);
     OCBRandomAccess(encrypt, delta, mlen, deltalen, &keys[0][0]);
     cout<<"Encrypt"<<endl;
-
     for(int i = 0; i<numBlocks; i++){
         imprimiArreglo(4,encrypt[i].block);
         cout<<endl;
     }
+    return 1;
+}
+
+
+int crypto_aead_decrypt(
+	unsigned char *m, unsigned long long *mlen,
+	unsigned char *nsec,
+	const unsigned char *c, unsigned long long clen,
+	const unsigned char *ad, unsigned long long adlen,
+	const unsigned char *npub,
+	const unsigned char *k)
+{
+
+    unsigned long long bloques = (unsigned long long) ceil( (double) clen/16.0); //cada 4080 salta en 1 el delta
+    unsigned long long deltalen = (unsigned long long) ceil( (double) bloques/255.0);
+    int numBlocks = clen/16;
+    aesBlock* delta;
+    delta = new aesBlock [deltalen];
+    aesBlock* encrypt;
+    encrypt = new aesBlock [numBlocks];
+    const unsigned int nonce[4] = {
+        0x3243f6a8,
+        0X885a308d,
+        0x313198a2,
+        0xe0370734,
+    };
+    unsigned int message[clen/4];
+
+    unsigned int keys[11][4];
+    unsigned int key[4];
+    unsignedCharArrayTounsignedIntArray(k,key,16);
+    unsignedCharArrayTounsignedIntArray(m,message,clen);
+
+    
+    for(int i = 0; i<numBlocks; i++){
+        for (int j = 0; j<4;j++){
+            encrypt[i].block[j]=  message[(i*4)+j];
+            // printf("0x%x\n",m[(i*4)+j] );
+        }
+    }
+
+
+    ExpansionKeys128(key,1, keys);
+    // imprimiArreglo(4,keys[10]);
+    getDelta(nonce , clen, delta, &keys[0][0],deltalen);
+    // imprimiArreglo(4,key);
+    
+    // imprimiArreglo(4,delta[0].block);
+    OCBRandomAccessDecrypt(encrypt, delta, clen, deltalen, &keys[0][0]);
+    cout<<"Decrypt"<<endl;
+    for(int i = 0; i<numBlocks; i++){
+        imprimiArreglo(4,encrypt[i].block);
+        cout<<endl;
+    }
+
+
+    return 1;
+}
+
+int main(int argc, char **argv) {
+  
+
+      
+
+        // 0x32,0x88,0x31,0xe0,
+        // 0x43,0x5a,0x31,0x37,
+        // 0xf6,0x30,0x98,0x07,
+        // 0xa8,0x8d,0xa2,0x34,
+
+        // 0x3243f6a8,
+        // 0X885a308d,
+        // 0x313198a2,
+        // 0xe0370734,
+
+    const unsigned char k[16] ={ 
+        0x2b,0x28,0xab,0x09,
+        0x7e,0xae,0xf7,0xcf,
+        0x15,0xd2,0x15,0x4f,
+        0x16,0xa6,0x88,0x3c
+    };
+    const unsigned char m[16] ={ 
+        0x30, 0x88, 0x6c, 0x7f,   
+        0x32, 0x7f, 0xfe, 0xad, 
+        0xee, 0xdf, 0x75, 0x48,
+        0x6f, 0x09, 0xe7, 0xb6,
+        // 0x32,0x88,0x31,0xe0,
+        // 0x43,0x5a,0x31,0x37,
+        // 0xf6,0x30,0x98,0x07,
+        // 0xa8,0x8d,0xa2,0x34,
+    };
+    const unsigned char m2[16] ={ 
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
+    };
+    unsigned long long mlen=16;
+    // 3032ee6f 
+    // 887fdf09 
+    // 6cfe75e7 
+    // 7fad48b6 
+    unsigned char c[16]={
+        0x30, 0x88, 0x6c, 0x7f,   
+        0x32, 0x7f, 0xfe, 0xad, 
+        0xee, 0xdf, 0x75, 0x48,
+        0x6f, 0x09, 0xe7, 0xb6,
+    };
+    unsigned long long *clen;
+     
+    const unsigned char *ad;
+    unsigned long long adlen;
+
+    const unsigned char *nsec;
+    unsigned char *nsec2;
+    const unsigned char *npub; 
+
+    crypto_aead_encrypt(c, clen, m2, mlen, ad, adlen, nsec, npub, k);
+    // unsignedCharArrayTounsignedIntArray(m,m2,mlen);
+    // imprimiArreglo(mlen/4,m2);
+    crypto_aead_decrypt(c, clen, nsec2, m, mlen, ad, adlen, npub, k);
+    
     return 0;
 }
+
