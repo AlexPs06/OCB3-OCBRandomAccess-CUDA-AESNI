@@ -653,13 +653,7 @@ __global__ void OCB128EncryptRandomAccesAsociatedData(aesBlock *ad,aesBlock *del
             deltaBlock[i]= delta[deltaIndex].block[i]+index;
         }
 
-        __syncthreads();
-        __shared__ unsigned int temp[4];
-
-        temp[0]=0;
-        temp[1]=0;
-        temp[2]=0;
-        temp[3]=0;
+        
 
         //calculo lamda 5
         OCBAESDelta2Rounds(deltaBlock, keys);
@@ -851,130 +845,7 @@ void unsignedCharArrayTounsignedIntArray(const unsigned char *in,unsigned int *o
     }
 }
 
-// inline __m128i AES_128_ASSIST (__m128i temp1, __m128i temp2)
-// {
-//     __m128i temp3;
-//     temp2 = _mm_shuffle_epi32 (temp2 ,0xff);
-//     temp3 = _mm_slli_si128 (temp1, 0x4);
-//     temp1 = _mm_xor_si128 (temp1, temp3);
-//     temp3 = _mm_slli_si128 (temp3, 0x4);
-//     temp1 = _mm_xor_si128 (temp1, temp3);
-//     temp3 = _mm_slli_si128 (temp3, 0x4);
-//     temp1 = _mm_xor_si128 (temp1, temp3);
-//     temp1 = _mm_xor_si128 (temp1, temp2);
-//     return temp1;
-// }
-// void AES_128_Key_Expansion (const unsigned char *userkey,
-//     unsigned char *key)
-//     {
-//     __m128i temp1, temp2;
-//     __m128i *Key_Schedule = (__m128i*)key;
-//     temp1 = _mm_loadu_si128((__m128i*)userkey);
-//     Key_Schedule[0] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1 ,0x1);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[1] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x2);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[2] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x4);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[3] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x8);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[4] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x10);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[5] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x20);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[6] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x40);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[7] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x80);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[8] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x1b);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[9] = temp1;
-//     temp2 = _mm_aeskeygenassist_si128 (temp1,0x36);
-//     temp1 = AES_128_ASSIST(temp1, temp2);
-//     Key_Schedule[10] = temp1;
-//     }
-// /* Note – the length of the output buffer is assumed to be a multiple of 16 bytes */
-// void AES_ECB_encrypt(unsigned char *in,
-//     unsigned char *out,
-//     unsigned long length,
-//     unsigned char *key,
-//     int number_of_rounds)
-//     {
-//     __m128i tmp;
-//     int i,j;
-//     //pointer to the PLAINTEXT
-//     //pointer to the CIPHERTEXT buffer
-//     //text length in bytes
-//     //pointer to the expanded key schedule
-//     //number of AES rounds 10,12 or 14
-//     if(length%16)
-//     length = length/16+1;
-//     else
-//     length = length/16;
-//     for(i=0; i < length; i++){
-//         tmp = _mm_loadu_si128 (&((__m128i*)in)[i]);
-//         tmp = _mm_xor_si128 (tmp,((__m128i*)key)[0]);
-//         for(j=1; j <number_of_rounds; j++){
-//             tmp = _mm_aesenc_si128 (tmp,( (__m128i*) key)[j]);
-//         }
-//         tmp = _mm_aesenclast_si128 (tmp,((__m128i*)key)[j]);
-//         _mm_storeu_si128 (&((__m128i*)out)[i],tmp);
-//     }
-// }
-// void checksum (unsigned long long bloques,aesBlock* message,const unsigned char *k, aesBlock* delta,unsigned long long deltalen, unsigned int *ad, unsigned int *out){
-    // // unsigned char checksum[16]={0};
-    // //xor de todos los mensajes
-    // unsigned int checksum[4]={0};
-    // for(int i = 0; i<bloques; i=i+4){
-    //     checksum[0] = checksum[0] ^ message[i].block[0];
-    //     checksum[1] = checksum[1] ^ message[i].block[1];
-    //     checksum[2] = checksum[2] ^ message[i].block[2];
-    //     checksum[3] = checksum[3] ^ message[i].block[3];
-    // }
 
-    // //expansion keys
-    // unsigned char keys[176];
-    // const unsigned char llave[] = {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
-
-    // AES_128_Key_Expansion (llave, keys);//Este se mueve a usarlo en todas las veces que necesitemos las llaves
-
-    
-    // //inicio calculo de lamda 3
-    // unsigned int deltaTemp[4]={0};
-    // for(int i = 0; i<4;i++){
-    //     deltaTemp[i] =  delta[0].block[i] + bloques + 2 ;
-    // }
-
-    // // unsigned char * temp;
-    // // unsigned char lamda3[16];
-    // // temp = (unsigned char *) deltaTemp;
-    // // memcpy(lamda3, temp, 16);
-    // AES_ECB_encrypt((unsigned char *) deltaTemp, (unsigned char *) deltaTemp, 16, keys, 2);
-    // //fin de lamda 3
-
-    // //xor lamda con el cheksum
-    // // checksum[0] = checksum[0] ^ deltaTemp[0];
-    // // checksum[1] = checksum[1] ^ deltaTemp[1];
-    // // checksum[2] = checksum[2] ^ deltaTemp[2];
-    // // checksum[3] = checksum[3] ^ deltaTemp[3];
-
-    // //calculo cifrado
-    // AES_ECB_encrypt((unsigned char *) checksum, (unsigned char *) checksum, 16, keys, 10);
-
-    // out[0] = checksum[0] ^ ad[0];
-    // out[1] = checksum[1] ^ ad[1];
-    // out[2] = checksum[2] ^ ad[2];
-    // out[3] = checksum[3] ^ ad[3];
-// }
 
 void checksum (aesBlock *in, unsigned long long tam, unsigned int *out ){
     for (int i=0; i<tam;i++){
