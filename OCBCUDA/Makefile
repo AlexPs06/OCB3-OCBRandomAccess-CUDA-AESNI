@@ -5,7 +5,7 @@ SOURCES= OCB.cu
 EXECNAME=OCB
 
 all: 
-	$(CC) -o $(EXECNAME) $(SOURCES) $(LIB) $(CFLAGS) 
+	$(CC) $(SOURCES) -o $(EXECNAME)  $(LIB) $(CFLAGS) 
 
 clean: 
 	rm *.o 
