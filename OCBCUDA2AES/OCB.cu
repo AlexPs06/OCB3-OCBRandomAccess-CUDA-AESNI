@@ -795,7 +795,7 @@ __global__ void OCB128DecryptRandomAccesGetTag(aesBlock *m,aesBlock *delta, aesB
         unsigned int deltaBlock[4];
         if(mcomplete){
             for (int i = 0 ; i< 4 ; i++){
-                deltaBlock[i]= delta[deltaIndex].block[i]+((mlen2-16)/16)+2;
+                deltaBlock[i]= delta[0].block[i]+((mlen2-16)/16)+2;
             }
     
             OCBAESDelta2Rounds(deltaBlock, keys);
