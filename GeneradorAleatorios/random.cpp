@@ -3,80 +3,38 @@
 #include <fstream>
 using namespace std; 
 
-unsigned int rdrand_get_n_uints (unsigned int n, unsigned int *dest);
-int generateRamdon (int n, unsigned int * radoms[],unsigned int *dest);
-
 int main(){
 
-    unsigned int n = 113;
-    
-    unsigned int dest[n]; 
-    rdrand_get_n_uints (n,dest);
+    unsigned int n = 4000;
+    unsigned int dest[n]={0}; 
 
+    remove("TestFile256mb.bin");
+    for(int j=0;j<16000;j++){
     
-    ofstream myfile;
-    myfile.open ("TestFile.txt");
-    
-    
-    for(int i = 1; i<n; i++){
-        myfile << hex<<dest[i]<<" ";
-        if(i%256 == 0)
-            myfile << "\n";
+        for(int k = 0; k<n; k++){
+            unsigned int temp = 0;
+            _rdrand32_step(&temp);
+            dest[k]=temp;
+        }
+        
+        FILE *write_ptr;
+        write_ptr = fopen("TestFile.bin","ab");  // w for write, b for binary
+        fwrite(dest,sizeof(dest),1,write_ptr); // write 4000 bytes from our buffer
+        fclose(write_ptr);
     }
-    myfile.close();
+    
+    cout<<"bloques de 16 bytes "<<( (16000*n)/ 16)<<endl;
+    cout<<"bloques de 16 bytes pero entre 4 "<<( (16000*n)/ 16)/4 <<endl;
+    //para visualizar el archivo usamos hexdump
+    // hexdump TestFile.bin
 
+    // unsigned char buffer[10];
+    // FILE *ptr;
 
-    int m =(n*1024*248);
-  
-    myfile.open ("TestFile256mb.txt");
-    for(int i = 1; i<m; i++){
-         unsigned int temp = 0;
-        _rdrand32_step(&temp);
+    // ptr = fopen("test.bin","rb");  // r for read, b for binary
 
-        myfile << hex<< temp<<" ";
-        if(i%256 == 0)
-            myfile << "\n";
-
-    }
-    myfile.close();
+    // fread(buffer,sizeof(buffer),1,ptr); // read 10 bytes to our buffer
 
     return 0;
 }
 
-int generateRamdon (int n, unsigned int * radoms[],unsigned int *dest)
-{
-
-
-    // unsigned int radoms[n/4096 ][4096];
-    
-    for(int j = 0; j< n; j++ ){
-
-        unsigned int i;
-        uint32_t *lptr= (uint32_t *) dest;
-
-        for (i= 0; i< 4096; i++) {
-            if ( ! _rdrand32_step(&dest[i]) ) {
-            }
-            radoms[j][i]=dest[i];
-
-        }
-
-	    
-    }
-
-	return n;
-}
-
-unsigned int rdrand_get_n_uints (unsigned int n, unsigned int *dest)
-{
-	unsigned int i;
-	uint32_t *lptr= (uint32_t *) dest;
-
-	for (i= 0; i< n; ++i, ++dest) {
-		if ( ! _rdrand32_step(dest) ) {
-			return i;
-		}
-	}
-
-	return n;
-}
