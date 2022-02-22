@@ -1,8 +1,10 @@
 #include<iostream>
 #include <cstring>
+#include <fstream>
 using namespace std;
 
-
+const int sizeBuffer = 16384;
+unsigned char buffer[sizeBuffer];
 class aesBlock
 {
 public:
@@ -34,7 +36,9 @@ unsigned char matrizCajaS[256]={
 // 0xbc, 0xa9, 0x59, 0x01,
 // 0x24, 0xf6, 0xd8, 0x50,
 void imprimiArreglo(int tam, unsigned int *in ){
-
+    if(tam==0){
+        tam=4;
+    }
     for (int i = 0; i<tam; i++){
         printf("%08x", in[i] );
     }
@@ -525,14 +529,15 @@ __device__ void OCBAESDelta2Rounds(unsigned int block[4],  unsigned int *keys){
             8, 5, 2, 15 
             };
         addRoundKey( block, keys,0);
-        for (int j = 1; j < 3; j++){
+        int j=1;
+        for (j = 1; j < 3; j++){
             shiftRows(block, shifttab);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
             addRoundKey( block, keys,j); // 
         }
         subBytes(block, matrizCajaS);
         shiftRows(block, shifttab);
-        addRoundKey( block, keys,10);
+        addRoundKey( block, keys,j);
 }
 
 __device__ void AES_128Decrypt(aesBlock *m, unsigned int *keys, int index ){
@@ -629,11 +634,13 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
         //penultimo bloque
         else if(index == ((mlen2-32)/16) ){
             if(mlen%16==0){
+                //bloque completo
                 for (int i = 0 ; i< 4 ; i++){
                     deltaBlock[i]= delta[0].block[i]+index;
                 }
         
                 OCBAESDelta2Rounds(deltaBlock, keys);
+                
         
                 XOR_128(m[index].block,deltaBlock);
         
@@ -641,6 +648,7 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
         
                 XOR_128(m[index].block,deltaBlock);
             }else{
+                //bloque imcompleto
                 aesBlock *aestemp;
                 aestemp = new aesBlock [1];
                 for (int i = 0 ; i< 4 ; i++){
@@ -1062,7 +1070,6 @@ int crypto_aead_encrypt(
     unsigned long long bloques = (unsigned long long) ceil( (double) mlen2/16.0); //cada 4080 salta en 1 el delta
     unsigned long long deltalen = 1;//el divisor cambia para 1 ronda de aes
    
-    bool mcomplete = !(mlen%16);
     aesBlock* delta;
     delta = new aesBlock [deltalen];
     
@@ -1139,16 +1146,18 @@ int crypto_aead_encrypt(
     // cout<<endl;
 
     cout<<"Plaintext    ";
-    imprimiArreglo(ceil((mlen%16)/4.0),message);
+    imprimiArreglo(ceil((mlen)/4.0),message);
     printf("\n---------------------------");
     cout<<endl;
 
     cout<<"Ciphertext   ";
     for(int i = 0; i<numBlocks; i++){
-        if(i==numBlocks-1)
-            imprimiArreglo( ceil((mlen%16)/4.0),encrypt[i].block);
-        else
+        if(i==numBlocks-1){
+            imprimiArreglo(ceil((mlen%16)/4.0),encrypt[i].block);
+        }
+        else{
             imprimiArreglo(4,encrypt[i].block);
+        }
     }
     printf("\n---------------------------");
     cout<<endl;
@@ -1281,9 +1290,20 @@ int crypto_aead_decrypt(
     return 1;
 }
 
+void readFile(unsigned char buffer[sizeBuffer]){
+    
+    FILE *ptr;
+
+    ptr = fopen("../GeneradorAleatorios/TestFile.bin","rb");  // r for read, b for binary
+
+    fread(buffer,sizeBuffer,1,ptr); // read n bytes to our buffer
+
+    fclose(ptr);
+}
+
 int main(int argc, char **argv) {
     
-
+    
     const unsigned char k[16] ={ 
         0x2b,0x28,0xab,0x09,
         0x7e,0xae,0xf7,0xcf,
@@ -1291,40 +1311,16 @@ int main(int argc, char **argv) {
         0x16,0xa6,0x88,0x3c
     };
     const unsigned char m[16] ={ 
-        0x30, 0x88, 0x6c, 0x7f,   
-        0x32, 0x7f, 0xfe, 0xad, 
-        0xee, 0xdf, 0x75, 0x48,
-        0x6f, 0x09, 0xe7, 0xb6,
-        // 0x32,0x88,0x31,0xe0,
-        // 0x43,0x5a,0x31,0x37,
-        // 0xf6,0x30,0x98,0x07,
-        // 0xa8,0x8d,0xa2,0x34,
-    };
-
-    const unsigned char m2[32] ={ 
         0x32,0x88,0x31,0xe0,
         0x43,0x5a,0x31,0x37,
         0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
-
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
+        0xa8,0x8d,0xa2,0x34
     };
-    unsigned long long mlen=3;
+
+    
+    unsigned long long mlen=sizeBuffer;
    
-    unsigned char c[32]={
-        0x88, 0x00, 0x00, 0x00,   
-        0xff, 0x00, 0x00, 0x00, 
-        0x7a, 0x00, 0x00, 0x00,
-        0x3b, 0x00, 0x00, 0x00,
-
-        0x30, 0x5c, 0x39, 0x50, 
-        0xe1, 0x95, 0x7 , 0xff,
-        0xab, 0xdd, 0x58, 0x70, 
-        0xc2, 0xe2, 0xb1, 0x38, 
-    };
+    unsigned char c[sizeBuffer]={};
     unsigned long long * clen = 0;
      
     const unsigned char ad[32] ={ 
@@ -1341,22 +1337,32 @@ int main(int argc, char **argv) {
     unsigned long long adlen = 32;
 
     const unsigned char nsec[16] = {
-        0x32, 0x43, 0xf6, 0xa8,
-        0X88, 0X5a, 0X30, 0X8d,
-        0x31, 0x31, 0x98, 0xa2,
-        0xe0, 0x37, 0x07, 0x35
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x35
     };
     unsigned char nsec2[16] = {
         0x32, 0x43, 0xf6, 0xa8,
         0X88, 0X5a, 0X30, 0X8d,
         0x31, 0x31, 0x98, 0xa2,
         0xe0, 0x37, 0x07, 0x35
-    };;
-    const unsigned char npub[1]={0}; 
+    };
+    const unsigned char npub[1]={0};
+    
+    
+    readFile(buffer);
+
+    // for (int i = 0; i<sizeBuffer; i++){
+    //     printf("%02x ", buffer[i] );
+        
+    // }
+    const unsigned char * m2 = &buffer[0];
+    mlen=16;
     cout<<"encrypt"<<endl;
-    crypto_aead_encrypt(c, clen, m2, mlen, ad, adlen, nsec, npub, k);
-    cout<<"Decrypt"<<endl;
-    crypto_aead_decrypt(c, clen, nsec2, c, mlen, ad, adlen, npub, k);
+    crypto_aead_encrypt(c, clen, m, mlen, ad, adlen, nsec, npub, k);
+    // cout<<"Decrypt"<<endl;
+    // crypto_aead_decrypt(c, clen, nsec2, c, mlen, ad, adlen, npub, k);
     //compile comand -march=native;
 
     return 0;
