@@ -5,10 +5,13 @@ using namespace std;
 
 int main(){
 
-    unsigned int n = 4000;
+    unsigned int n = 4096;
     unsigned int dest[n]={0}; 
+    FILE *write_ptr;
 
-    remove("TestFile256mb.bin");
+    write_ptr = fopen("TestFile.bin","wb");  // w for write, b for binary
+    fclose(write_ptr);
+    
     for(int j=0;j<16000;j++){
     
         for(int k = 0; k<n; k++){
@@ -17,10 +20,11 @@ int main(){
             dest[k]=temp;
         }
         
-        FILE *write_ptr;
+        
         write_ptr = fopen("TestFile.bin","ab");  // w for write, b for binary
         fwrite(dest,sizeof(dest),1,write_ptr); // write 4000 bytes from our buffer
         fclose(write_ptr);
+        exit(1);
     }
     
     cout<<"bloques de 16 bytes "<<( (16000*n)/ 16)<<endl;
