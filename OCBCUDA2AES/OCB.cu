@@ -623,13 +623,16 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
             for (int i = 0 ; i< 4 ; i++){
                 deltaBlock[i]= delta[0].block[i]+index+3;
             }
+
             OCBAESDelta2Rounds(deltaBlock, keys);
     
             XOR_128(m[index].block,deltaBlock);
 
             AES_128(m, keys,index);
-    
+
             XOR_128(m[index].block,S[0].block);
+
+            
         }
         //penultimo bloque
         else if(index == ((mlen2-32)/16) ){
@@ -651,9 +654,13 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
                 //bloque imcompleto
                 aesBlock *aestemp;
                 aestemp = new aesBlock [1];
+
+
                 for (int i = 0 ; i< 4 ; i++){
                     aestemp[0].block[i] = delta[0].block[i]+index+1;
                 }
+                // printf("index %i", index);
+
                 OCBAESDelta2Rounds(aestemp[0].block,keys);
 
                 AES_128(aestemp, keys,0);
@@ -663,8 +670,8 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
                 for (int i = 0 ; i< 4 ; i++){
                     aestemp[0].block[i] = 0;
                 }
-                memcpy(aestemp[0].block, m[index].block, mlen);
-                memcpy(m[index].block, aestemp[0].block, 16);
+                memcpy(aestemp[0].block, m[index].block, mlen); //antes estaba mlen
+                memcpy(m[index].block, aestemp[0].block, 16); //antes estaba 16
             }
         }
         else{
@@ -760,10 +767,8 @@ __global__ void OCB128DecryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned l
             
             OCBAESDelta2Rounds(aestemp[0].block, keys);
 
-
             AES_128(aestemp, keys,0);
 
-            // imprimiArregloCudaInt(4,m[index].block);
             // imprimiArregloCudaInt(4,delta[deltaIndex].block);
 
             XOR_128(m[index].block,aestemp[0].block);
@@ -771,10 +776,8 @@ __global__ void OCB128DecryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned l
             for (int i = 0 ; i< 4 ; i++){
                 aestemp[0].block[i] = 0;
             }
-            memcpy(aestemp[0].block, m[index].block, mlen);
-            memcpy(m[index].block, aestemp[0].block, 16);
-
-
+            memcpy(aestemp[0].block, m[index].block, mlen%16);//antes estaba mlen
+            memcpy(m[index].block, aestemp[0].block, mlen%16);//antes estaba 16
         }
         else{
             for (int i = 0 ; i< 4 ; i++){
@@ -1134,7 +1137,6 @@ int crypto_aead_encrypt(
     OCBRandomAccess(encrypt, delta,S, mlen, mlen2+16, deltalen, &keys[0][0]);
 
     cout<<endl;
-
     cout<<"Key          ";
     imprimiArreglo(4,key);
     printf("\n---------------------------");
@@ -1310,11 +1312,16 @@ int main(int argc, char **argv) {
         0x15,0xd2,0x15,0x4f,
         0x16,0xa6,0x88,0x3c
     };
-    const unsigned char m[16] ={ 
+    const unsigned char m[32] ={ 
         0x32,0x88,0x31,0xe0,
         0x43,0x5a,0x31,0x37,
         0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34
+        0xa8,0x8d,0xa2,0x34,
+
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
     };
 
     
@@ -1324,15 +1331,15 @@ int main(int argc, char **argv) {
     unsigned long long * clen = 0;
      
     const unsigned char ad[32] ={ 
-        0x2b,0x28,0xab,0x09,
-        0x7e,0xae,0xf7,0xcf,
-        0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c,
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
 
-        0x2b,0x28,0xab,0x09,
-        0x7e,0xae,0xf7,0xcf,
-        0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
     };
     unsigned long long adlen = 32;
 
@@ -1358,7 +1365,7 @@ int main(int argc, char **argv) {
         
     // }
     const unsigned char * m2 = &buffer[0];
-    mlen=16;
+    mlen=32;
     cout<<"encrypt"<<endl;
     crypto_aead_encrypt(c, clen, m, mlen, ad, adlen, nsec, npub, k);
     // cout<<"Decrypt"<<endl;
