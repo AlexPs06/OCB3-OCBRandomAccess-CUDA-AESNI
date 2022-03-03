@@ -83,7 +83,13 @@ void print512_num(__m512i var)
 }
 
 
-static inline void AES_ecb_encrypt_blks(block *blks, block *out, unsigned nblks, block *key, unsigned rounds) {
+static inline void AES_ecb_encrypt_blks(
+block *blks, //bloques de entrada 
+block *out, //bloques de salida
+unsigned nblks, //numero de bloques 
+block *key, //bloque de las llaves
+unsigned rounds)//numero de rondas 
+{
     unsigned i,j,rnds=rounds;
 	for (i=0; i<nblks; ++i)
 	    out[i] =_mm512_xor_si512(blks[i], key[0]);
