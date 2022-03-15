@@ -349,8 +349,10 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         finalblockChar[j] = in[(length-finalBlocklenght )+ j ]; 
     }
     if(finalBlocklenght%16 != 0){
-        finalblockChar[finalBlocklenght] = 0; //poner 1 en vez de 0
+        finalblockChar[finalBlocklenght] = 1; //poner 1 en vez de 0
     }
+
+    
 
     __m128i finalBlock[ sizefinalBlockArray ];
     __m128i delta128[ sizefinalBlockArray ];
@@ -364,6 +366,13 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         delta128[j] =  _mm_loadu_si128(&((__m128i*)cipherNonceTemp)[j]);
     }
     if(finalBlocklenght%16 != 0){
+        
+        unsigned char impresion[64]={0};
+        _mm_storeu_si128(&((__m128i*)impresion)[0],delta128[0]);
+        for(int j=0; j<16; j++ ){
+            printf("%x ",impresion[j]);
+        }
+
         delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
         AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
 
@@ -597,7 +606,7 @@ void calculateAssociatedData(
         finalblockChar[j] = ad[(adLength-finalBlocklenght )+ j ]; 
     }
     if(finalBlocklenght%16 != 0){
-        finalblockChar[finalBlocklenght] = 0; //poner 1 en vez de 0
+        finalblockChar[finalBlocklenght] = 1; //poner 1 en vez de 0
     }
 
     __m128i finalBlock[ sizefinalBlockArray ];
@@ -717,7 +726,6 @@ int number_of_rounds)//number of AES rounds 10,12 or 14
         //Cifrado dos rondas del delta
         deltaChecksum = AES_encrypt(deltaChecksum, key128, 3);
 
-        
 
         //xor delta checksumn
         checksumFinal =  _mm_xor_si128( checksumFinal, deltaChecksum);
@@ -763,15 +771,14 @@ int main(){
     int number_of_rounds=10;
     unsigned char keys[176] = {0};
     unsigned char Expandkey512[704]={0};
-    unsigned long long mlen=20;
+    unsigned long long mlen=17;
     
     const unsigned char m[mlen] = {
         0x32, 0x43, 0xf6, 0xa8,
         0x88, 0x5a, 0x30, 0x8d, 
         0x31, 0x31, 0x98, 0xa2, 
         0xe0, 0x37, 0x07, 0x34,
-
-        0x32, 0x43, 0xf6, 0xa8  
+        0x32, 
     };
     unsigned char nonce[64] = {
         0x32, 0x43, 0xf6, 0xa8,
