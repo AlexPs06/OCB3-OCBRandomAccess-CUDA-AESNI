@@ -651,8 +651,14 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
         unsigned int deltaBlock[4];
         if(index == (mlen-16)/16){
             
-    
+            // imprimiArregloCudaInt(4,delta[index].block);
+            // printf("-------------------------\n");
+
             XOR_128(m[index].block,delta[index].block);
+
+
+
+
             AES_128(m, mlen, keys,index);
     
             XOR_128(m[index].block,S[0].block);
@@ -815,8 +821,12 @@ void getDelta(const unsigned int nonce[4], aesBlock* delta,unsigned int *keys,un
     delta[0].block[2]= nonce[2];
     delta[0].block[3]= nonce[3];
 
-    
+
+
     AES128Encrypt(delta, 16, keys);
+
+
+
     unsigned int tmp2[4] = {0,};
     unsigned int first_bit, last_bit;
     memcpy(tmp2, delta[0].block, 16);    
@@ -845,6 +855,12 @@ void getDelta(const unsigned int nonce[4], aesBlock* delta,unsigned int *keys,un
     delta[deltalen-1].block[1] = delta[deltalen-1].block[1] ^ delta[deltalen-2].block[1]; 
     delta[deltalen-1].block[2] = delta[deltalen-1].block[2] ^ delta[deltalen-2].block[2]; 
     delta[deltalen-1].block[3] = delta[deltalen-1].block[3] ^ delta[deltalen-2].block[3]; 
+
+    printf("\n");
+    imprimiArreglo(4,delta[deltalen-2].block);
+    cout<<endl;
+    
+    
 }
 void getDeltaAD(const unsigned int nonce[4], aesBlock* delta,unsigned int *keys,unsigned long long deltalen ){
     
@@ -874,13 +890,13 @@ void copyMessageToAESBlock(aesBlock* encrypt, int numBlocks,const unsigned int m
         }
     }
 }
-void unsignedCharArrayTounsignedIntArray(const unsigned char *in,unsigned int *out, unsigned long long len){
+void unsignedCharArrayTounsignedIntArray(const unsigned char *in,unsigned int *out, unsigned long long len, unsigned long long mlen2 ){
     
-    unsigned char h[len];
-    unsigned char temp[len];
+    unsigned char h[mlen2];
+    unsigned char temp[mlen2];
 	
-    memcpy(h, in, len);
-    memcpy(temp, in, len);
+    memcpy(h, in, mlen2);
+    memcpy(temp, in, mlen2);
     
     int shifttab[16]= {
         12, 8, 4, 0,   
@@ -889,13 +905,23 @@ void unsignedCharArrayTounsignedIntArray(const unsigned char *in,unsigned int *o
         15, 11, 7, 3 
         };
 
-    for(int i = 0; i < len; i++){
-        int index = shifttab[i%16]+(floor(i/16)*16 );
-        temp[i] = h[index];
+    for(int i = 0; i < mlen2; i++){
+        if(i<len ){
+            int index = shifttab[i%16]+(floor(i/16)*16 );
+            
+            temp[i] = h[index];
+            // printf("%x  \n",h[i]);
+
+        } 
+        else{
+            temp[i]=0x00;
+        }
+
     }
+    
     unsigned int * temp2;
     temp2 = (unsigned int *) temp;
-    for(int i = 0; i < len/4; i++){
+    for(int i = 0; i < mlen2/4; i++){
         out[i]=temp2[i];
     }
 }
@@ -918,11 +944,18 @@ int crypto_aead_encrypt(
 	const unsigned char *npub,
 	const unsigned char *k){
 
-    //en esta version no hay problema porque es para dos rondas de aes con una ronda se tiene que cambiar
 
-    unsigned long long bloques = (unsigned long long) ceil( (double) mlen/16.0); //cada 4080 salta en 1 el delta
-    int numBlocks = mlen/16;
-    int numAdBlocks = adlen/16;
+    int mlen2 = mlen;  
+    if(mlen%16!=0)
+        mlen2 = 16-(mlen%16)+ (mlen);
+
+    int adlenMultiplo16 = adlen;  
+    if(adlen%16!=0)
+        adlenMultiplo16 = 16-(adlen%16)+ (adlen);
+
+    int numBlocks = mlen2/16;
+   
+    int numAdBlocks = adlenMultiplo16/16;
 
     aesBlock* delta;
     delta = new aesBlock [numBlocks+1];
@@ -945,21 +978,21 @@ int crypto_aead_encrypt(
         0xe0370734,
     };
 
-
-    unsigned int message[mlen/4];
-    unsigned int adTemp[adlen/4];
+    unsigned int message[mlen2/4];
+    unsigned int adTemp[adlenMultiplo16/4];
     unsigned int keys[11][4];
     unsigned int key[4];
     unsigned int sumcheck[4]={0};
 
-    unsignedCharArrayTounsignedIntArray(k,key,16);
-    unsignedCharArrayTounsignedIntArray(m,message,mlen);
-    unsignedCharArrayTounsignedIntArray(ad,adTemp,adlen);
+    unsignedCharArrayTounsignedIntArray(k,key,16,16);
+    unsignedCharArrayTounsignedIntArray(m,message,mlen,mlen2);
+    unsignedCharArrayTounsignedIntArray(ad,adTemp,adlen,adlenMultiplo16);
     
     for(int i = 0; i<numBlocks; i++){
         for (int j = 0; j<4;j++){
             encrypt[i].block[j]=  message[(i*4)+j];
         }
+
     }
     for(int i = 0; i<numAdBlocks; i++){
         for (int j = 0; j<4;j++){
@@ -967,30 +1000,19 @@ int crypto_aead_encrypt(
         }
     }
 
-    
-
-
     //expansion de llaves
     ExpansionKeys128(key,1, keys);
     //obetencion de la delta por medio del nonce 
     getDelta(nonce, delta, &keys[0][0],numBlocks+1);
     getDeltaAD(nonce, deltaAD, &keys[0][0],numAdBlocks);
-    // cout<<numAdBlocks<<endl;
-    // for(int i = 0; i<numAdBlocks; i++){
-    //     imprimiArreglo(4,deltaAD[i].block);
-    // }
-    // cout<<numBlocks+1<<endl;
-    // for(int i = 0; i<numBlocks+1; i++){
-    //     imprimiArreglo(4,delta[i].block);
-    // }
-    // exit(1);
-    OCBRandomAccessAsociatedData(asociateData, deltaAD, S, adlen, numBlocks+1, &keys[0][0]);
+    
+    OCBRandomAccessAsociatedData(asociateData, deltaAD, S, adlenMultiplo16, numAdBlocks, &keys[0][0]);
     checksum (asociateData, numAdBlocks, S[0].block );
 
     // checksum (bloques,encrypt,k, delta,deltalen, asociateData, sumcheck);
     checksum (encrypt, numBlocks, encrypt[numBlocks].block );
 
-    OCBRandomAccess(encrypt, delta,S, mlen+16, numBlocks+1, &keys[0][0]);
+    OCBRandomAccess(encrypt, delta,S, mlen2+16, numBlocks+1, &keys[0][0]);
 
     cout<<"Encrypt"<<endl;
     for(int i = 0; i<numBlocks; i++){
@@ -1014,8 +1036,17 @@ int crypto_aead_decrypt(
 	const unsigned char *k){
 
     unsigned long long bloques = (unsigned long long) ceil( (double) clen/16.0); //cada 4080 salta en 1 el delta
-    int numBlocks = clen/16;
-    int numAdBlocks = adlen/16;
+    
+    int clen2 = clen;  
+    if(clen%16!=0)
+        clen2 = 16-(clen%16)+ (clen);
+
+    int adlenMultiplo16 = adlen;  
+    if(adlen%16!=0)
+        adlenMultiplo16 = 16-(adlen%16)+ (adlen);
+
+    int numBlocks = clen2/16;
+    int numAdBlocks = adlenMultiplo16/16;
 
     aesBlock* delta;
     delta = new aesBlock [numBlocks+1];
@@ -1041,15 +1072,15 @@ int crypto_aead_decrypt(
     };
 
 
-    unsigned int message[clen/4];
-    unsigned int adTemp[adlen/4];
+    unsigned int message[clen2/4];
+    unsigned int adTemp[adlenMultiplo16/4];
     unsigned int keys[11][4];
     unsigned int key[4];
     unsigned int sumcheck[4]={0};
 
-    unsignedCharArrayTounsignedIntArray(k,key,16);
-    unsignedCharArrayTounsignedIntArray(c,message,clen);
-    unsignedCharArrayTounsignedIntArray(ad,adTemp,adlen);
+    unsignedCharArrayTounsignedIntArray(k,key,16,16);
+    unsignedCharArrayTounsignedIntArray(c,message,clen,clen2);
+    unsignedCharArrayTounsignedIntArray(ad,adTemp,adlen,adlenMultiplo16);
     
     for(int i = 0; i<numBlocks; i++){
         for (int j = 0; j<4;j++){
@@ -1164,18 +1195,19 @@ int main(int argc, char **argv) {
         0x6f, 0x09, 0xe7, 0xb6,
     };
     unsigned long long *clen;
-     
-    const unsigned char ad[32] ={ 
-        0x2b,0x28,0xab,0x09,
-        0x7e,0xae,0xf7,0xcf,
-        0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c,
-        0x2b,0x28,0xab,0x09,
-        0x7e,0xae,0xf7,0xcf,
-        0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c
-    };
     unsigned long long adlen = 32;
+    const unsigned char ad[32] ={ 
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
+
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
+    };
+   
 
     const unsigned char *nsec;
     unsigned char *nsec2;
@@ -1184,7 +1216,7 @@ int main(int argc, char **argv) {
     crypto_aead_encrypt(c, clen, m2, mlen, ad, adlen, nsec, npub, k);
     // unsignedCharArrayTounsignedIntArray(m,m2,mlen);
     // imprimiArreglo(mlen/4,m2);
-    crypto_aead_decrypt(c, clen, nsec2, m, mlen, ad, adlen, npub, k);
+    // crypto_aead_decrypt(c, clen, nsec2, m, mlen, ad, adlen, npub, k);
     //compile comand -march=native;
 
     return 0;
