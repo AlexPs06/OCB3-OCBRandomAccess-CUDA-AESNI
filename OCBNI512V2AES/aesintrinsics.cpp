@@ -12,7 +12,7 @@ typedef __m512i block;
 typedef __m128i block128;
 void calculateChecksum(block *checksum, block * nonce, block128 *Stag, unsigned char key128[176], block blockSum, int length, int indiceBlockSum, int number_of_rounds);
 void calculateAssociatedData(const unsigned char *ad, unsigned char *nsec, long adLength, block *keys,unsigned char *key128, block128 *Stag, int number_of_rounds);
-
+void key128tokey512(unsigned char Expandkey128[176], unsigned char Expandkey512[704]);
 static inline void AES_ecb128_encrypt_blks(block128 *in, block128 *out, unsigned nblks, unsigned char *key, unsigned rounds);
 
 inline __m128i AES_128_ASSIST (__m128i temp1, __m128i temp2)
@@ -65,7 +65,20 @@ void AES_128_Key_Expansion (unsigned char *userkey, unsigned char *key)
     temp1 = AES_128_ASSIST(temp1, temp2);
     Key_Schedule[10] = temp1;
 }
+void AES_128_Key_Expansion_Decrypt (__m128i * key128Encrypt, __m128i * key128Decrypt){
+    key128Decrypt[0] = key128Encrypt[10];
+    key128Decrypt[1] = _mm_aesimc_si128(key128Encrypt[9]);
+	key128Decrypt[2] = _mm_aesimc_si128(key128Encrypt[8]);
+	key128Decrypt[3] = _mm_aesimc_si128(key128Encrypt[7]);
+	key128Decrypt[4] = _mm_aesimc_si128(key128Encrypt[6]);
+	key128Decrypt[5] = _mm_aesimc_si128(key128Encrypt[5]);
+	key128Decrypt[6] = _mm_aesimc_si128(key128Encrypt[4]);
+	key128Decrypt[7] = _mm_aesimc_si128(key128Encrypt[3]);
+	key128Decrypt[8] = _mm_aesimc_si128(key128Encrypt[2]);
+	key128Decrypt[9] = _mm_aesimc_si128(key128Encrypt[1]);
+    key128Decrypt[10] = key128Encrypt[0];
 
+}
 
 void imprimiArreglo(int tam, unsigned char *in ){
 
@@ -102,6 +115,38 @@ unsigned rounds)//numero de rondas
 	for (i=0; i<nblks; ++i)
 	    out[i] =_mm512_aesenclast_epi128(out[i], key[j]);
 }
+
+static inline void AES_ecb_decrypt_blks(
+block *blks, //bloques de entrada 
+block *out, //bloques de salida
+unsigned nblks, //numero de bloques 
+block *key, //bloque de las llaves
+unsigned rounds)//numero de rondas 
+{
+    unsigned i,j,rnds=rounds;
+	for (i=0; i<nblks; ++i)
+	    out[i] =_mm512_xor_si512(blks[i], key[0]);
+	for(j=1; j<rnds; ++j)
+	    for (i=0; i<nblks; ++i)
+		    out[i] = _mm512_aesdec_epi128(out[i], key[j]);
+	for (i=0; i<nblks; ++i)
+	    out[i] =_mm512_aesdeclast_epi128(out[i], key[j]);
+}
+
+static inline void AES_ecb_encrypt_blks_rounds(
+block *blks, //bloques de entrada 
+block *out, //bloques de salida
+unsigned nblks, //numero de bloques 
+block *key, //bloque de las llaves
+unsigned rounds)//numero de rondas 
+{
+    unsigned i,j,rnds=rounds;
+    for (i=0; i<nblks; ++i)
+	    out[i] = blks[i];
+	for(j=1; j<rnds; ++j)
+	    for (i=0; i<nblks; ++i)
+		    out[i] = _mm512_aesenc_epi128(out[i], key[j]);
+}
 static inline void AES_ecb128_encrypt_blks(block128 *in, block128 *out, unsigned nblks, unsigned char *key, unsigned rounds){
 	unsigned i,j,rnds=rounds;
     const __m128i *sched = ((__m128i *)(key));
@@ -113,37 +158,37 @@ static inline void AES_ecb128_encrypt_blks(block128 *in, block128 *out, unsigned
 	for (i=0; i<nblks; ++i)
 	    out[i] =_mm_aesenclast_si128(out[i], sched[j]);
 }
-void AES_ECB512_encrypt(const unsigned char *in,//pointer to the PLAINTEXT 
-unsigned char *out, //pointer to the CIPHERTEXT buffer
-unsigned long length,//text length in bytes
-unsigned char *key,//pointer to the expanded key schedule
-int number_of_rounds) //number of AES rounds 10,12 or 14
-{
-    __m512i tmp;
-    __m512i keys;
 
-    int i,j;
-    if(length%64)
-        length = length/64+1;
-    else
-        length = length/64;
-    for(i=0; i < length; i++){
-
-        tmp = _mm512_loadu_si512(&((__m512i*)in)[i]);
-        keys = _mm512_loadu_si512(&((__m512i*)key)[0]);
-        tmp = _mm512_xor_si512 (tmp,keys);
-
-        for(j=1; j <number_of_rounds; j++){
-            keys = _mm512_loadu_si512(&((__m512i*)key)[j]);
-            tmp = _mm512_aesenc_epi128 (tmp,keys);
-
-        }
-        keys = _mm512_loadu_si512(&((__m512i*)key)[j]);
-        tmp = _mm512_aesenclast_epi128 (tmp,keys);
-        _mm512_storeu_si512 (&((__m512i*)out)[i],tmp);
-    }
+static inline void AES_ecb128_decrypt_blks(block128 *in, block128 *out, unsigned nblks, block128 *keys, unsigned rounds){
+    unsigned i,j,rnds=rounds;
+    // const unsigned char m[16] = {
+    //     0x39, 0x25, 0x84, 0x1b,
+    //     0x02, 0xdc, 0x09, 0xfb, 
+    //     0xdc, 0x11, 0x85, 0x97, 
+    //     0x19, 0x6a, 0x0b, 0x32, 
+    // };
+    // out[0] =  _mm_loadu_si128(&((__m128i*)m)[0]);
+	for (i=0; i<nblks; ++i)
+	    out[i] =_mm_xor_si128(in[i], keys[0]);
+    for(j=1; j<rnds; ++j)
+	    for (i=0; i<nblks; ++i)
+		    out[i] = _mm_aesdec_si128(out[i], keys[j]);
+	for (i=0; i<nblks; ++i)
+	    out[i] =_mm_aesdeclast_si128(out[i], keys[j]);
+    
+   
+    
 }
+static inline void AES_ecb128_encrypt_blks_rounds(block128 *in, block128 *out, unsigned nblks, unsigned char *key, unsigned rounds){
+	unsigned i,j,rnds=rounds;
+    const __m128i *sched = ((__m128i *)(key));
+	for (i=0; i<nblks; ++i)
+        out[i] = in[i];
+	for(j=1; j<rnds; ++j)
+	    for (i=0; i<nblks; ++i)
+		    out[i] = _mm_aesenc_si128(out[i], sched[j]);
 
+}
 
 static inline block128 AES_encrypt(block128 in, unsigned char *key, unsigned rounds){
 	int j,rnds=rounds;
@@ -262,7 +307,8 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         }
         
         //cifrado de dos rondas del nonce
-        AES_ecb_encrypt_blks(cipherNonceTemp,cipherNonceTemp, blocks, keys, 3);
+        // AES_ecb_encrypt_blks(cipherNonceTemp,cipherNonceTemp, blocks, keys, 3);
+        AES_ecb_encrypt_blks_rounds(cipherNonceTemp,cipherNonceTemp, blocks, keys, 3);
         
         //xor del nonce con el mensaje correspondiente
         for(j=0; j < blocks; j++){
@@ -300,7 +346,7 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         checksum[0] = _mm512_xor_si512(checksum[0], tmp[j]);
     }
 
-    AES_ecb_encrypt_blks(cipherNonceTemp,cipherNonceTemp, tempLength-1, keys, 3);
+    AES_ecb_encrypt_blks_rounds(cipherNonceTemp,cipherNonceTemp, tempLength-1, keys, 3);
     
     //xor del nonce con el mensaje correspondiente
     for(j=0; j < tempLength-1; j++){
@@ -374,8 +420,10 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         }
 
         delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
-        AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
-
+        
+        // AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        
         for(j=0; j<sizefinalBlockArray-1; j++){
             tmpfinalBlock[j] = _mm_xor_si128(delta128[j],finalBlock[j]);
         }
@@ -393,7 +441,8 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
             _mm_storeu_si128(&((__m128i*)out)[i+j],tmpfinalBlock[j]);
         }
     }else{
-        AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        // AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
 
         for(j=0; j<sizefinalBlockArray; j++){
             tmpfinalBlock[j] = _mm_xor_si128(delta128[j],finalBlock[j]);
@@ -421,6 +470,331 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
     }
    
     calculateAssociatedData(ad, nsec, adLength, keys, key128, Stag, number_of_rounds);
+
+    calculateChecksum(checksum,nonce,Stag, key128, blockSum, length,indiceBlockSum, number_of_rounds);
+}
+
+void AES_OCB512_decrypt(const unsigned char *in,//pointer to the PLAINTEXT 
+unsigned char *out, //pointer to the CIPHERTEXT buffer
+const unsigned char *ad,
+long adLength,
+long length,//text length in bytes
+unsigned char *key,//pointer to the expanded key schedule
+unsigned char *nsec,//pointer to the NONCE
+int number_of_rounds) //number of AES rounds 10,12 or 14
+{
+    __m512i tmp[4];
+    __m512i checksum[1]; 
+    __m128i Stag[1];
+    
+    __m512i nonce[4];
+    __m512i cipherNonceTemp[4];
+    
+    __m512i keys512Decrypt[number_of_rounds+1];
+    __m512i keys512Encrypt[number_of_rounds+1];
+
+
+    for (int i = 0; i<4; i++){
+        tmp[i]= _mm512_setzero_epi32();
+        nonce[i]= _mm512_setzero_epi32();
+        cipherNonceTemp[i]= _mm512_setzero_epi32();
+        checksum[0]= _mm512_setzero_epi32();
+    }
+
+    unsigned char test[64] = {
+        0x00, 0x00, 0x00, 0x00,
+        0X00, 0X00, 0X00, 0X00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        0x00, 0x00, 0x00, 0x01,
+        0X00, 0X00, 0X00, 0X01,
+        0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x01,
+
+        0x00, 0x00, 0x00, 0x02,
+        0X00, 0X00, 0X00, 0X02,
+        0x00, 0x00, 0x00, 0x02,
+        0x00, 0x00, 0x00, 0x02,
+
+        0x00, 0x00, 0x00, 0x03,
+        0X00, 0X00, 0X00, 0X03,
+        0x00, 0x00, 0x00, 0x03,
+        0x00, 0x00, 0x00, 0x03
+    };
+    unsigned char key128[176];//pointer to the expanded key schedule for 128
+    unsigned char key128De[176];//pointer to the expanded key schedule for 128
+    unsigned char Expandkey512[704]={0};
+
+    unsigned char block4[64] = {
+        0x00, 0x00, 0x00, 0x04,
+        0X00, 0X00, 0X00, 0X04,
+        0x00, 0x00, 0x00, 0x04,
+        0x00, 0x00, 0x00, 0x04,
+
+        0x00, 0x00, 0x00, 0x04,
+        0X00, 0X00, 0X00, 0X04,
+        0x00, 0x00, 0x00, 0x04,
+        0x00, 0x00, 0x00, 0x04,
+
+        0x00, 0x00, 0x00, 0x04,
+        0X00, 0X00, 0X00, 0X04,
+        0x00, 0x00, 0x00, 0x04,
+        0x00, 0x00, 0x00, 0x04,
+
+        0x00, 0x00, 0x00, 0x04,
+        0X00, 0X00, 0X00, 0X04,
+        0x00, 0x00, 0x00, 0x04,
+        0x00, 0x00, 0x00, 0x04
+    };
+
+    
+
+    int i,j;
+    int tempLength=length;
+    
+    
+    AES_128_Key_Expansion (key, key128);
+    
+    __m128i *key128Encrypt  = ((__m128i *)(key128));
+    __m128i key128Decrypt[number_of_rounds+1];
+    
+
+    AES_128_Key_Expansion_Decrypt(key128Encrypt,key128Decrypt);
+
+
+    for(i=0; i < number_of_rounds+1; i++){
+        keys512Decrypt[i] = _mm512_castsi128_si512( key128Decrypt[i] );
+        keys512Decrypt[i] = _mm512_inserti64x2(keys512Decrypt[i], key128Decrypt[i], 1 );
+        keys512Decrypt[i] = _mm512_inserti64x2(keys512Decrypt[i], key128Decrypt[i], 2 );
+        keys512Decrypt[i] = _mm512_inserti64x2(keys512Decrypt[i], key128Decrypt[i], 3 );
+        
+        keys512Encrypt[i] = _mm512_castsi128_si512( key128Encrypt[i] );
+        keys512Encrypt[i] = _mm512_inserti64x2(keys512Encrypt[i], key128Encrypt[i], 1 );
+        keys512Encrypt[i] = _mm512_inserti64x2(keys512Encrypt[i], key128Encrypt[i], 2 );
+        keys512Encrypt[i] = _mm512_inserti64x2(keys512Encrypt[i], key128Encrypt[i], 3 );
+    }
+
+    for(i=0; i < 4; i++){
+        nonce[i] = _mm512_loadu_si512(&((__m512i*)nsec)[0]);
+    }
+
+    
+
+    __m512i blockSum = _mm512_loadu_si512(&((__m512i*)test)[0]);
+    __m512i blockOnly4 = _mm512_loadu_si512(&((__m512i*)block4)[0]);
+    AES_ecb_encrypt_blks(nonce,nonce, 4, keys512Encrypt, 10);
+
+
+    if(length%64 == 0)
+        tempLength = length/64;
+    else
+        tempLength = (length + (64 -length%64) ) /64 ;
+
+    i=0;
+    while(tempLength>4){
+        unsigned blocks = 0;
+        //obtencion de bloques
+        for(j = 0; j<4; j++ ){
+            tmp[j] = _mm512_loadu_si512(&((__m512i*)in)[i+j]);
+            blocks++;
+        }
+
+       
+        //calculo del nonce
+        for(j=0; j < blocks; j++){
+            cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
+            blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+        }
+
+
+        
+        //cifrado de dos rondas del nonce
+        // AES_ecb_encrypt_blks(cipherNonceTemp,cipherNonceTemp, blocks, keys, 3);
+        AES_ecb_encrypt_blks_rounds(cipherNonceTemp,cipherNonceTemp, blocks, keys512Encrypt, 3);
+        
+        
+
+        //xor del nonce con el mensaje correspondiente
+        for(j=0; j < blocks; j++){
+            tmp[j] = _mm512_xor_si512(cipherNonceTemp[j], tmp[j]);
+        }
+        
+
+        //cifrado del mensaje 
+        AES_ecb_decrypt_blks(tmp,tmp, blocks, keys512Decrypt, number_of_rounds);
+        
+        
+
+        //xort del mensaje cifrado con el nonce
+        for(j=0; j < blocks; j++){
+            tmp[j] = _mm512_xor_si512(cipherNonceTemp[j], tmp[j]);
+        }
+
+        
+
+        //Actualizxacioon del checksum
+        for(j = 0; j<blocks; j++ ){
+            checksum[0] = _mm512_xor_si512(checksum[0], tmp[j]);
+        }
+
+        //Carga del mensaje cifrado a la salida
+        for(j=0; j < blocks; j++){
+            _mm512_storeu_si512(&((__m512i*)out)[i+j],tmp[j]);
+        }
+
+        //actualizacion de indices
+        i = i+4;
+        tempLength = tempLength-4;
+    }
+
+    
+    tempLength=tempLength+1;
+    //final block
+    for(j = 0; j<tempLength-1; j++ ){
+        tmp[j] = _mm512_loadu_si512(&((__m512i*)in)[i+j]);
+    }
+    
+    for(j=0; j < tempLength-1; j++){
+        cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
+        blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+    }
+    
+
+    AES_ecb_encrypt_blks_rounds(cipherNonceTemp,cipherNonceTemp, tempLength-1, keys512Encrypt, 3);
+    
+    //xor del nonce con el mensaje correspondiente
+    for(j=0; j < tempLength-1; j++){
+        tmp[j] = _mm512_xor_si512(cipherNonceTemp[j], tmp[j]);
+    }
+    
+    //cifrado del mensaje 
+    AES_ecb_decrypt_blks(tmp,tmp, tempLength-1, keys512Decrypt, number_of_rounds);
+    
+    //xort del mensaje cifrado con el nonce
+    for(j=0; j < tempLength-1; j++){
+        tmp[j] = _mm512_xor_si512(cipherNonceTemp[j], tmp[j]);
+    }
+    for(j = 0; j<tempLength-1; j++ ){
+        checksum[0] = _mm512_xor_si512(checksum[0], tmp[j]);
+    }
+    //Carga del mensaje cifrado a la salida
+    for(j=0; j < tempLength-1; j++){
+        _mm512_storeu_si512(&((__m512i*)out)[i+j],tmp[j]);
+    }
+    
+    // ultimo bloque de 512
+
+    int finalBlocklenght = 0;
+    int sizefinalBlockArray = 0;
+    int indiceBlockSum = 0;
+    //comprobamos si es completo o no
+    if(length%16 == 0){
+        
+        finalBlocklenght = length%64;
+        if(finalBlocklenght == 0)
+            finalBlocklenght = 64;
+        sizefinalBlockArray = finalBlocklenght/16;
+    }
+    else{
+        finalBlocklenght = length%64;
+        //calculo de los bloquyes de 128 que necesitamos
+        sizefinalBlockArray = (finalBlocklenght + (16 -finalBlocklenght%16) ) /16 ;
+    }
+
+    unsigned char finalblockChar[64] = {0};
+
+    for(j = 0; j<finalBlocklenght; j++){
+        finalblockChar[j] = in[(length-finalBlocklenght )+ j ]; 
+    }
+    
+
+    
+
+    __m128i finalBlock[ sizefinalBlockArray ];
+    __m128i delta128[ sizefinalBlockArray ];
+    __m128i add1 = _mm_set_epi8 (0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00);
+    __m128i tmpfinalBlock[ sizefinalBlockArray ];
+
+    cipherNonceTemp[0] = _mm512_add_epi32 (nonce[0], blockSum );
+    
+    for(j=0; j<sizefinalBlockArray; j++){
+        finalBlock[j] =  _mm_loadu_si128(&((__m128i*)finalblockChar)[j]);
+        delta128[j] =  _mm_loadu_si128(&((__m128i*)cipherNonceTemp)[j]);
+    }
+    if(finalBlocklenght%16 != 0){
+        
+        // unsigned char impresion[64]={0};
+        // _mm_storeu_si128(&((__m128i*)impresion)[0],delta128[0]);
+        // for(int j=0; j<16; j++ ){
+        //     printf("%x ",impresion[j]);
+        // }
+
+        delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
+        
+        // AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        
+        for(j=0; j<sizefinalBlockArray-1; j++){
+            tmpfinalBlock[j] = _mm_xor_si128(delta128[j],finalBlock[j]);
+        }
+        tmpfinalBlock[sizefinalBlockArray-1] = delta128[sizefinalBlockArray-1];
+
+        // AES_ecb128_encrypt_blks(tmpfinalBlock, tmpfinalBlock, sizefinalBlockArray, key128 , 10);
+        AES_ecb128_decrypt_blks(tmpfinalBlock, tmpfinalBlock, sizefinalBlockArray-1, key128Decrypt , 10);
+        AES_ecb128_encrypt_blks(&tmpfinalBlock[sizefinalBlockArray-1], &tmpfinalBlock[sizefinalBlockArray-1], 1, key128 , 10);
+        
+        // _mm_storeu_si128(&((__m128i*)out)[0],tmpfinalBlock[sizefinalBlockArray-1]);
+
+        for(j=0; j<sizefinalBlockArray-1; j++){
+            tmpfinalBlock[j] = _mm_xor_si128(tmpfinalBlock[j],delta128[j]);
+        }
+        tmpfinalBlock[sizefinalBlockArray-1] = _mm_xor_si128(tmpfinalBlock[sizefinalBlockArray-1],finalBlock[sizefinalBlockArray-1]);
+        // i = ( (length + (16 -length%16) ) /16 ) - sizefinalBlockArray;
+        // for(j=0; j < sizefinalBlockArray; j++){
+        //     _mm_storeu_si128(&((__m128i*)out)[i+j],tmpfinalBlock[j]);
+        // }
+    }else{
+        // AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
+
+        for(j=0; j<sizefinalBlockArray; j++){
+            tmpfinalBlock[j] = _mm_xor_si128(delta128[j],finalBlock[j]);
+        }
+        AES_ecb128_decrypt_blks(tmpfinalBlock, tmpfinalBlock, sizefinalBlockArray, key128Decrypt , 10);
+
+        for(j=0; j<sizefinalBlockArray; j++){
+            tmpfinalBlock[j] = _mm_xor_si128(delta128[j],tmpfinalBlock[j]);
+        }
+
+        // i = ( (length) /16 ) - sizefinalBlockArray;
+        
+        // for(j=0; j < sizefinalBlockArray; j++){
+        //     _mm_storeu_si128(&((__m128i*)out)[i+j],tmpfinalBlock[j]);
+        // }
+    }
+
+    for(j=0; j < sizefinalBlockArray; j++){
+        _mm_storeu_si128(&((__m128i*)finalblockChar)[j],tmpfinalBlock[j]);
+    }
+    if(finalBlocklenght%16 != 0){
+        finalblockChar[finalBlocklenght] = 1; //poner 1 en vez de 0
+        for(int i = finalBlocklenght+1; i<64;i++)
+            finalblockChar[i] = 0; //poner 1 en vez de 0
+    }
+
+    tmp[0] = _mm512_loadu_si512(&((__m512i*)finalblockChar)[0]);
+    checksum[0] = _mm512_xor_si512(checksum[0], tmp[0]);
+    _mm512_storeu_si512(&((__m512i*)out)[i+tempLength-1],tmp[0]);
+
+
+    indiceBlockSum = sizefinalBlockArray; 
+    if(sizefinalBlockArray>3){
+        blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+        indiceBlockSum=0;
+    }
+   
+    calculateAssociatedData(ad, nsec, adLength, keys512Encrypt, key128, Stag, number_of_rounds);
 
     calculateChecksum(checksum,nonce,Stag, key128, blockSum, length,indiceBlockSum, number_of_rounds);
 }
@@ -531,7 +905,7 @@ void calculateAssociatedData(
         }
         
         //cifrado de dos rondas del nonce
-        AES_ecb_encrypt_blks(cipherNonceTemp,cipherNonceTemp, blocks, keys, 3);
+        AES_ecb_encrypt_blks_rounds(cipherNonceTemp,cipherNonceTemp, blocks, keys, 3);
         
         //xor del nonce con Ek1
         for(j=0; j < blocks; j++){
@@ -566,7 +940,7 @@ void calculateAssociatedData(
     }
    
     //cifrado de dos rondas del nonce
-    AES_ecb_encrypt_blks(cipherNonceTemp,cipherNonceTemp, tempLength-1, keys, 3);
+    AES_ecb_encrypt_blks_rounds(cipherNonceTemp,cipherNonceTemp, tempLength-1, keys, 3);
     
     //xor del nonce con Ek1
     for(j=0; j < tempLength-1; j++){
@@ -623,7 +997,7 @@ void calculateAssociatedData(
     }
     if(finalBlocklenght%16 != 0){
         delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
-        AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
 
         for(j=0; j<sizefinalBlockArray; j++){
             tmpfinalBlock[j] = _mm_xor_si128(delta128[j],Ek1_128);
@@ -635,7 +1009,7 @@ void calculateAssociatedData(
         AES_ecb128_encrypt_blks(tmpfinalBlock, tmpfinalBlock, sizefinalBlockArray, key128 , 10);
 
     }else{
-        AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
+        AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
 
         for(j=0; j<sizefinalBlockArray; j++){
             tmpfinalBlock[j] = _mm_xor_si128(delta128[j],Ek1_128);
@@ -721,11 +1095,10 @@ int number_of_rounds)//number of AES rounds 10,12 or 14
             i++;
         }
 
-       
-
         //Cifrado dos rondas del delta
-        deltaChecksum = AES_encrypt(deltaChecksum, key128, 3);
-
+        // deltaChecksum = AES_encrypt(deltaChecksum, key128, 3);
+        AES_ecb128_encrypt_blks_rounds(&deltaChecksum, &deltaChecksum, 1, key128 , 3);
+        
 
         //xor delta checksumn
         checksumFinal =  _mm_xor_si128( checksumFinal, deltaChecksum);
@@ -736,6 +1109,11 @@ int number_of_rounds)//number of AES rounds 10,12 or 14
         checksumFinal = _mm_xor_si128(checksumFinal, Stag[0]); 
         //falta xor con el tag
         
+        _mm_store_si128 ((__m128i*)impresion,Stag[0]);
+        cout<<"s   \n";
+        imprimiArreglo(16,&impresion[0]);
+        printf("\n---------------------------");
+        cout<<endl;
         
         _mm_store_si128 ((__m128i*)impresion,checksumFinal);
         cout<<"Tag   \n";
@@ -769,17 +1147,29 @@ int main(){
         0x09, 0xcf, 0x4f, 0x3c,
     };
     int number_of_rounds=10;
-    unsigned char keys[176] = {0};
-    unsigned char Expandkey512[704]={0};
-    unsigned long long mlen=17;
+    
+    unsigned long long mlen=32;
     
     const unsigned char m[mlen] = {
+        0x3d, 0x8c, 0x52, 0x1b,
+        0x1b, 0x8a, 0xcc, 0xab, 
+        0x42, 0x8d, 0xcb, 0x4b, 
+        0xb8, 0xb0, 0xc4, 0xf0,
+
+        0xfc, 0x7d, 0x75, 0xc8, 
+        0xc7, 0xb1, 0x19, 0x9a, 
+        0x56, 0xf4, 0x54, 0xcb, 
+        0x3f, 0x71, 0xa1, 0xa6,
+        
+    };
+    const unsigned char ad[mlen] = {
         0x32, 0x43, 0xf6, 0xa8,
         0x88, 0x5a, 0x30, 0x8d, 
         0x31, 0x31, 0x98, 0xa2, 
         0xe0, 0x37, 0x07, 0x34,
-        0x32, 
+        0x34,
     };
+    unsigned adlen = 17;
     unsigned char nonce[64] = {
         0x32, 0x43, 0xf6, 0xa8,
         0X88, 0X5a, 0X30, 0X8d,
@@ -803,13 +1193,13 @@ int main(){
     };
     unsigned char c[64]={0};
 
-    AES_128_Key_Expansion (k, keys);
-    key128tokey512(keys, Expandkey512);
+    
 
     // AES_ECB512_encrypt(m, c, mlen, Expandkey512, number_of_rounds);
   
-    AES_OCB512_encrypt(m, c, m, mlen, mlen, Expandkey512, nonce, number_of_rounds);  
-
+    // AES_OCB512_encrypt(m, c, m, mlen, mlen, Expandkey512, nonce, number_of_rounds);  
+    AES_OCB512_decrypt(m, c, ad, adlen, mlen, k, nonce, number_of_rounds);  
+    
     cout<<"Ciphertext   \n";
     imprimiArreglo(16,&c[0]);
     printf("\n---------------------------");
