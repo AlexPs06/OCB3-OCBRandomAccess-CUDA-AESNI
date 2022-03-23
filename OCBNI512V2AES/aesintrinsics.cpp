@@ -524,7 +524,6 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
     };
     unsigned char key128[176];//pointer to the expanded key schedule for 128
     unsigned char key128De[176];//pointer to the expanded key schedule for 128
-    unsigned char Expandkey512[704]={0};
 
     unsigned char block4[64] = {
         0x00, 0x00, 0x00, 0x04,
@@ -547,8 +546,6 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         0x00, 0x00, 0x00, 0x04,
         0x00, 0x00, 0x00, 0x04
     };
-
-    
 
     int i,j;
     int tempLength=length;
@@ -649,7 +646,6 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
     }
 
     
-    tempLength=tempLength+1;
     //final block
     for(j = 0; j<tempLength-1; j++ ){
         tmp[j] = _mm512_loadu_si512(&((__m512i*)in)[i+j]);
