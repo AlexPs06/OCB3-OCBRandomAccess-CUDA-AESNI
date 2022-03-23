@@ -1,12 +1,11 @@
-CC=nvcc
-CFLAGS= 
+CC=g++
+CFLAGS= -march=native;
 LIB= 
-SOURCES= OCB3.cu
-EXECNAME=OCB3
+SOURCES= OCB1NI512.cpp
+EXECNAME= OCB1NI512
 
 all: 
 	$(CC) -o $(EXECNAME) $(SOURCES) $(LIB) $(CFLAGS) 
 
 clean: 
 	rm *.o 
-
