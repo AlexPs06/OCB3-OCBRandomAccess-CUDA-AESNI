@@ -78,7 +78,7 @@ __device__ void imprimiArregloCuda(int tam,unsigned char *keys ){
 __device__ void imprimiArregloCudaInt(int tam,unsigned int *keys ){
     printf("----------------\n" );
     for (int i = 0; i<tam; i++){
-        printf("%x \n", keys[i] );
+        printf("%08x \n", keys[i] );
     }
 }
 __device__ void XOR_128(unsigned int* A, unsigned int * B )
@@ -524,15 +524,15 @@ __device__ void OCBAESDelta1Rounds(unsigned int block[4],  unsigned int *keys){
             4, 1, 14, 11,
             8, 5, 2, 15 
             };
-        addRoundKey( block, keys,0);
+        // addRoundKey( block, keys,0);
         for (int j = 1; j < 2; j++){
             shiftRows(block, shifttab);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
             addRoundKey( block, keys,j); // 
         }
-        subBytes(block, matrizCajaS);
-        shiftRows(block, shifttab);
-        addRoundKey( block, keys,10);
+        // subBytes(block, matrizCajaS);
+        // shiftRows(block, shifttab);
+        // addRoundKey( block, keys,10);
 }
 
 __device__ void AES_128Decrypt(aesBlock *m, unsigned int *keys, int index ){
@@ -617,9 +617,12 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
         unsigned int deltaBlock[4];
         //ultimo bloque
         if(index == (mlen2-16)/16){
+
+
             for (int i = 0 ; i< 4 ; i++){
-                deltaBlock[i]= delta[deltaIndex].block[i]+index+3;
+                deltaBlock[i]= delta[deltaIndex].block[i]+3+index;
             }
+            
             OCBAESDelta1Rounds(deltaBlock, keys);
     
             XOR_128(m[index].block,deltaBlock);
@@ -801,8 +804,9 @@ __global__ void OCB128DecryptRandomAccesGetTag(aesBlock *m,aesBlock *delta, aesB
         unsigned int deltaBlock[4];
         if(mcomplete){
             for (int i = 0 ; i< 4 ; i++){
-                deltaBlock[i]= delta[deltaIndex].block[i]+((mlen2-16)/16)+2;
+                deltaBlock[i]= delta[deltaIndex].block[i]+((mlen2)/16)+3;
             }
+            imprimiArregloCudaInt(4,delta[deltaIndex].block);
     
             OCBAESDelta1Rounds(deltaBlock, keys);
     
@@ -980,7 +984,7 @@ void getDelta(const unsigned int nonce[4],const unsigned long long mlen, aesBloc
         }
     }
     AES128Encrypt(delta, deltalen*16, keys);
-
+    
 
 }
 
@@ -1004,35 +1008,28 @@ unsigned long long mlen2 tamaño en multiplo de 16 mas cercano al real
 
 void unsignedCharArrayTounsignedIntArray(const unsigned char *in,unsigned int *out, unsigned long long len, unsigned long long mlen2 ){
     
-    unsigned char h[mlen2];
-    unsigned char temp[mlen2];
-	
-    memcpy(h, in, mlen2);
+    unsigned char h[mlen2]={0};
+    unsigned char temp[mlen2]={0};
+    memcpy(h, in, len);
     memcpy(temp, in, mlen2);
     
     int shifttab[16]= {
-        12, 8, 4, 0,   
-        13, 9, 5, 1,  
-        14, 10, 6, 2,
-        15, 11, 7, 3 
+        3, 2, 1, 0,   
+        7, 6, 5, 4,  
+        11, 10, 9, 8,
+        15, 14, 13, 12 
         };
+    if(len%16!=0){
+        h[len]=0x01;
+    }
 
     for(int i = 0; i < mlen2; i++){
-        if(i<len ){
-            int index = shifttab[i%16]+(floor(i/16)*16 );
-            
-            temp[i] = h[index];
-            // printf("%x  \n",h[i]);
-
-        } 
-        else{
-            temp[i]=0x00;
-        }
-
+        int index = shifttab[i%16]+(floor(i/16)*16 );
+        temp[i] = h[index];
     }
-    
     unsigned int * temp2;
     temp2 = (unsigned int *) temp;
+
     for(int i = 0; i < mlen2/4; i++){
         out[i]=temp2[i];
     }
@@ -1067,12 +1064,16 @@ int crypto_aead_encrypt(
         adlenMultiplo16 = 16-(adlen%16)+ (adlen);
 
     unsigned long long bloques = (unsigned long long) ceil( (double) mlen2/16.0); //cada 4080 salta en 1 el delta
-    unsigned long long deltalen = ceil( (double) mlen2/64.0);//el divisor cambia para 1 ronda de aes
+    unsigned long long deltalen = mlen2/64.0 + 1;//el divisor cambia para 1 ronda de aes
+    unsigned long long deltaADlen = adlenMultiplo16/64.0 + 1 ;//el divisor cambia para 1 ronda de aes
    
     bool mcomplete = !(mlen%16);
     aesBlock* delta;
     delta = new aesBlock [deltalen];
     
+    aesBlock* deltaAD;
+    deltaAD = new aesBlock [deltaADlen];
+
     int numBlocks = mlen2/16;
     aesBlock* encrypt;
     encrypt = new aesBlock [numBlocks+1];//Se le suma uno por el bloque de la sumatoria
@@ -1121,11 +1122,12 @@ int crypto_aead_encrypt(
     ExpansionKeys128(key,1, keys);
     //obetencion de la delta por medio del nonce 
     getDelta(nonce , mlen2, delta, &keys[0][0],deltalen);
+    getDelta(nonce , adlenMultiplo16, deltaAD, &keys[0][0],deltaADlen);
     
     //calculo de Ek1 para lamda 5
     AES128Encrypt(Ek1, 16, &keys[0][0]);
 
-    OCBRandomAccessAsociatedData(asociateData, delta, Ek1, adlen, adlenMultiplo16, deltalen, &keys[0][0]);
+    OCBRandomAccessAsociatedData(asociateData, deltaAD, Ek1, adlen, adlenMultiplo16, deltaADlen, &keys[0][0]);
     
     checksum (asociateData, numAdBlocks, S[0].block );
 
@@ -1140,22 +1142,32 @@ int crypto_aead_encrypt(
     printf("\n---------------------------");
     cout<<endl;
 
-    // cout<<"Nonce        ";
-    // imprimiArreglo(4,nonce2);
-    // printf("\n---------------------------");
-    // cout<<endl;
+    cout<<"S        ";
+    imprimiArreglo(4,S[0].block);
+    printf("\n---------------------------");
+    cout<<endl;
+
+    cout<<"Nonce        ";
+    imprimiArreglo(4,nonce);
+    printf("\n---------------------------");
+    cout<<endl;
 
     cout<<"Plaintext    ";
-    imprimiArreglo(ceil((mlen%16)/4.0),message);
+    imprimiArreglo(ceil(mlen/4.0),message);
     printf("\n---------------------------");
     cout<<endl;
 
     cout<<"Ciphertext   ";
     for(int i = 0; i<numBlocks; i++){
-        if(i==numBlocks-1)
-            imprimiArreglo( ceil((mlen%16)/4.0),encrypt[i].block);
-        else
+        if(i==numBlocks-1){
+            if(mlen%16!=0)
+                imprimiArreglo(ceil((mlen%16)/4.0),encrypt[i].block);
+            else
+                imprimiArreglo(ceil(16/4.0),encrypt[i].block);
+        }   
+        else{
             imprimiArreglo(4,encrypt[i].block);
+        }
     }
     printf("\n---------------------------");
     cout<<endl;
@@ -1173,7 +1185,8 @@ int crypto_aead_decrypt(
 	const unsigned char *c, unsigned long long clen,
 	const unsigned char *ad, unsigned long long adlen,
 	const unsigned char *npub,
-	const unsigned char *k){
+	const unsigned char *k)
+{
 
     //calculo de bloques completos en tamaños de 16, siempre se completa a multiplo de 16
     int clen2 = clen;  
@@ -1184,7 +1197,8 @@ int crypto_aead_decrypt(
         adlenMultiplo16 = 16-(adlen%16)+ (adlen);
 
     unsigned long long bloques = (unsigned long long) ceil( (double) clen2/16.0); //cada 4080 salta en 1 el delta
-    unsigned long long deltalen = 1;//el divisor cambia para 1 ronda de aes
+    unsigned long long deltalen = clen2/64.0 + 1;//el divisor cambia para 1 ronda de aes
+    unsigned long long deltaADlen = adlenMultiplo16/64.0 + 1 ;//el divisor cambia para 1 ronda de aes
     //en esta version no hay problema porque es para dos rondas de aes con una ronda se tiene que cambiar
    
     bool mcomplete = !(clen%16);
@@ -1194,6 +1208,9 @@ int crypto_aead_decrypt(
     int numBlocks = clen2/16;
     aesBlock* encrypt;
     encrypt = new aesBlock [numBlocks];//Se le suma uno por el bloque de la sumatoria
+
+    aesBlock* deltaAD;
+    deltaAD = new aesBlock [deltaADlen];
 
     aesBlock* sumcheck;
     sumcheck = new aesBlock [1];//Se le suma uno por el bloque de la sumatoria
@@ -1244,20 +1261,24 @@ int crypto_aead_decrypt(
     ExpansionKeys128(key,1, keys);
     //obetencion de la delta por medio del nonce 
     getDelta(nonce , clen2, delta, &keys[0][0],deltalen);
-
+    getDelta(nonce , adlenMultiplo16, deltaAD, &keys[0][0],deltaADlen);
     
     //calculo de Ek1 para lamda 5
     AES128Encrypt(Ek1, 16, &keys[0][0]);
 
-    OCBRandomAccessAsociatedData(asociateData, delta, Ek1, adlen, adlenMultiplo16, deltalen, &keys[0][0]);
+    OCBRandomAccessAsociatedData(asociateData, deltaAD, Ek1, adlen, adlenMultiplo16, deltaADlen, &keys[0][0]);
     
     checksum (asociateData, numAdBlocks, S[0].block );    
 
     OCBRandomAccessDecrypt(encrypt, delta, clen, clen2, deltalen, &keys[0][0]);
 
     checksum (encrypt, numBlocks, sumcheck[0].block );
+
+   
     
-    OCBRandomAccessGetTag(sumcheck, delta, S, mcomplete, clen2+16, deltalen, &keys[0][0]);
+    
+
+    OCBRandomAccessGetTag(sumcheck, delta, S, mcomplete, clen2, deltalen, &keys[0][0]);
 
     cout<<endl;
 
@@ -1266,17 +1287,29 @@ int crypto_aead_decrypt(
     printf("\n---------------------------");
     cout<<endl;
 
+    cout<<"S          ";
+    imprimiArreglo(4,S[0].block);
+    printf("\n---------------------------");
+    cout<<endl;
+
+    
+
     cout<<"Ciphertext   ";
-    imprimiArreglo(ceil((clen%16)/4.0),message);
+    imprimiArreglo(ceil((clen)/4.0),message);
     printf("\n---------------------------");
     cout<<endl;
 
     cout<<"Plaintext    ";
     for(int i = 0; i<numBlocks; i++){
-        if(i==numBlocks-1)
-        imprimiArreglo( ceil((clen%16)/4.0),encrypt[i].block);
-        else
-        imprimiArreglo(4,encrypt[i].block);
+        if(i==numBlocks-1){
+            if(clen%16!=0)
+                imprimiArreglo(ceil((clen%16)/4.0),encrypt[i].block);
+            else
+                imprimiArreglo(ceil(16/4.0),encrypt[i].block);
+        }   
+        else{
+            imprimiArreglo(4,encrypt[i].block);
+        }
     }
     printf("\n---------------------------");
     cout<<endl;
@@ -1292,49 +1325,50 @@ int main(int argc, char **argv) {
     
 
     const unsigned char k[16] ={ 
-        0x2b,0x28,0xab,0x09,
-        0x7e,0xae,0xf7,0xcf,
-        0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c
+        0x2b, 0x7e, 0x15, 0x16, 
+        0x28, 0xae, 0xd2, 0xa6, 
+        0xab, 0xf7, 0x15, 0x88,
+        0x09, 0xcf, 0x4f, 0x3c,
     };
-    const unsigned char m[16] ={ 
-        0x30, 0x88, 0x6c, 0x7f,   
-        0x32, 0x7f, 0xfe, 0xad, 
-        0xee, 0xdf, 0x75, 0x48,
-        0x6f, 0x09, 0xe7, 0xb6,
-        // 0x32,0x88,0x31,0xe0,
-        // 0x43,0x5a,0x31,0x37,
-        // 0xf6,0x30,0x98,0x07,
-        // 0xa8,0x8d,0xa2,0x34,
-    };
+    unsigned long long mlen=32;
 
-    const unsigned char m2[32] ={ 
+    const unsigned char m[mlen] ={ 
         0x32,0x88,0x31,0xe0,
         0x43,0x5a,0x31,0x37,
         0xf6,0x30,0x98,0x07,
         0xa8,0x8d,0xa2,0x34,
-
         0x32,0x88,0x31,0xe0,
         0x43,0x5a,0x31,0x37,
         0xf6,0x30,0x98,0x07,
         0xa8,0x8d,0xa2,0x34,
     };
-    unsigned long long mlen=3;
+
+    const unsigned char m2[mlen] ={ 
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
+        0x32,0x88,0x31,0xe0,
+        0x43,0x5a,0x31,0x37,
+        0xf6,0x30,0x98,0x07,
+        0xa8,0x8d,0xa2,0x34,
+     
+    };
    
     unsigned char c[32]={
-        0x00, 0x00, 0x00, 0x00,   
-        0xbb, 0x00, 0x00, 0x00, 
-        0x61, 0x00, 0x00, 0x00,
-        0x13, 0x00, 0x00, 0x00,
-
-        0x30, 0x5c, 0x39, 0x50, 
-        0xe1, 0x95, 0x7 , 0xff,
-        0xab, 0xdd, 0x58, 0x70, 
-        0xc2, 0xe2, 0xb1, 0x38, 
+        0xe2, 0x9d, 0x49, 0xbe, 
+        0x89, 0x3f, 0x49, 0xaf,  
+        0x2d, 0x10, 0x3d, 0x92,
+        0xc9, 0xc7, 0x01, 0xc1,
+        0x2c, 0x89, 0xc6, 0xab,
+        0x1c, 0x7d, 0x98, 0xdb, 
+        0x92, 0x16, 0xf9, 0xfb, 
+        0x73, 0xab, 0x06, 0xd8, 
     };
     unsigned long long * clen = 0;
+    unsigned long long adlen = 32;
      
-    const unsigned char ad[32] ={ 
+    const unsigned char ad[adlen] ={ 
         0x2b,0x28,0xab,0x09,
         0x7e,0xae,0xf7,0xcf,
         0x15,0xd2,0x15,0x4f,
@@ -1343,21 +1377,20 @@ int main(int argc, char **argv) {
         0x2b,0x28,0xab,0x09,
         0x7e,0xae,0xf7,0xcf,
         0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c
+        0x16,0xa6,0x88,0x3c,
     };
-    unsigned long long adlen = 32;
 
     const unsigned char nsec[16] = {
         0x32, 0x43, 0xf6, 0xa8,
         0X88, 0X5a, 0X30, 0X8d,
         0x31, 0x31, 0x98, 0xa2,
-        0xe0, 0x37, 0x07, 0x35
+        0xe0, 0x37, 0x07, 0x34
     };
     unsigned char nsec2[16] = {
         0x32, 0x43, 0xf6, 0xa8,
         0X88, 0X5a, 0X30, 0X8d,
         0x31, 0x31, 0x98, 0xa2,
-        0xe0, 0x37, 0x07, 0x35
+        0xe0, 0x37, 0x07, 0x34
     };;
     const unsigned char npub[1]={0}; 
     cout<<"encrypt"<<endl;
