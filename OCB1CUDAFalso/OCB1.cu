@@ -28,11 +28,13 @@ unsigned char matrizCajaS[256]={
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 };
 
-void imprimiArreglo(int tam, unsigned int *keys ){
-    for (int i = 0; i<tam; i++){
-        printf("%x \n", keys[i] );
+void imprimiArreglo(int tam, unsigned int *in ){
+    if(tam==0){
+        tam=4;
     }
-    printf("\n---------------------------\n");
+    for (int i = 0; i<tam; i++){
+        printf("%08x", in[i] );
+    }
 }
 void ExpansionKeys128( unsigned int *k,unsigned long long klen,  unsigned int keys[11][4] ){
     unsigned char RotWordTemp[4];
@@ -646,7 +648,6 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if( index<mlen/16){
 
-        unsigned long long deltaIndex = floor( (double) index/255);//esto se cambia 
         __syncthreads();
         unsigned int deltaBlock[4];
         if(index == (mlen-16)/16){
@@ -655,9 +656,6 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
             // printf("-------------------------\n");
 
             XOR_128(m[index].block,delta[index].block);
-
-
-
 
             AES_128(m, mlen, keys,index);
     
@@ -687,7 +685,6 @@ __global__ void OCB128DecryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if( index<mlen/16){
 
-        unsigned long long deltaIndex = floor( (double) index/255);//esto se cambia 
         
         if(false){
             
@@ -892,40 +889,33 @@ void copyMessageToAESBlock(aesBlock* encrypt, int numBlocks,const unsigned int m
 }
 void unsignedCharArrayTounsignedIntArray(const unsigned char *in,unsigned int *out, unsigned long long len, unsigned long long mlen2 ){
     
-    unsigned char h[mlen2];
-    unsigned char temp[mlen2];
+    unsigned char h[mlen2]={0};
+    unsigned char temp[mlen2]={0};
 	
-    memcpy(h, in, mlen2);
+    memcpy(h, in, len);
     memcpy(temp, in, mlen2);
     
     int shifttab[16]= {
-        12, 8, 4, 0,   
-        13, 9, 5, 1,  
-        14, 10, 6, 2,
-        15, 11, 7, 3 
+        3, 2, 1, 0,   
+        7, 6, 5, 4,  
+        11, 10, 9, 8,
+        15, 14, 13, 12 
         };
+    if(len%16!=0){
+        h[len]=0x01;
+    }
 
     for(int i = 0; i < mlen2; i++){
-        if(i<len ){
-            int index = shifttab[i%16]+(floor(i/16)*16 );
-            
-            temp[i] = h[index];
-            // printf("%x  \n",h[i]);
-
-        } 
-        else{
-            temp[i]=0x00;
-        }
-
+        int index = shifttab[i%16]+(floor(i/16)*16 );
+        temp[i] = h[index];
     }
-    
     unsigned int * temp2;
     temp2 = (unsigned int *) temp;
+
     for(int i = 0; i < mlen2/4; i++){
         out[i]=temp2[i];
     }
 }
-
 
 
 void checksum (aesBlock *in, unsigned long long tam, unsigned int *out ){
@@ -971,12 +961,7 @@ int crypto_aead_encrypt(
     aesBlock* asociateData;
     asociateData = new aesBlock [numAdBlocks];
 
-    const unsigned int nonce[4] = {
-        0x3243f6a8,
-        0X885a308d,
-        0x313198a2,
-        0xe0370734,
-    };
+    unsigned int nonce[4] = {0};
 
     unsigned int message[mlen2/4];
     unsigned int adTemp[adlenMultiplo16/4];
@@ -985,6 +970,7 @@ int crypto_aead_encrypt(
     unsigned int sumcheck[4]={0};
 
     unsignedCharArrayTounsignedIntArray(k,key,16,16);
+    unsignedCharArrayTounsignedIntArray(nsec,nonce,16,16);
     unsignedCharArrayTounsignedIntArray(m,message,mlen,mlen2);
     unsignedCharArrayTounsignedIntArray(ad,adTemp,adlen,adlenMultiplo16);
     
@@ -1014,15 +1000,42 @@ int crypto_aead_encrypt(
 
     OCBRandomAccess(encrypt, delta,S, mlen2+16, numBlocks+1, &keys[0][0]);
 
-    cout<<"Encrypt"<<endl;
-    for(int i = 0; i<numBlocks; i++){
-        imprimiArreglo(4,encrypt[i].block);
-        cout<<endl;
-    }
-    cout<<"S"<<endl;
+    cout<<endl;
+    cout<<"Key          ";
+    imprimiArreglo(4,key);
+    printf("\n---------------------------");
+    cout<<endl;
+
+    cout<<"S        ";
     imprimiArreglo(4,S[0].block);
-    cout<<"Tag"<<endl;
+    printf("\n---------------------------");
+    cout<<endl;
+    cout<<"Nonce        ";
+    imprimiArreglo(4,nonce);
+    printf("\n---------------------------");
+    cout<<endl;
+
+    cout<<"Plaintext    ";
+    imprimiArreglo(ceil((mlen)/4.0),message);
+    printf("\n---------------------------");
+    cout<<endl;
+
+    cout<<"Ciphertext   ";
+    for(int i = 0; i<numBlocks; i++){
+        if(i==numBlocks-1){
+            imprimiArreglo(ceil((mlen%16)/4.0),encrypt[i].block);
+        }
+        else{
+            imprimiArreglo(4,encrypt[i].block);
+        }
+    }
+    printf("\n---------------------------");
+    cout<<endl;
+
+    cout<<"Tag          ";
     imprimiArreglo(4,encrypt[numBlocks].block);
+    cout<<endl;
+
     return 1;
 }
 
@@ -1136,84 +1149,62 @@ int crypto_aead_decrypt(
 }
 
 int main(int argc, char **argv) {
-        // 0x32,0x88,0x31,0xe0,
-        // 0x43,0x5a,0x31,0x37,
-        // 0xf6,0x30,0x98,0x07,
-        // 0xa8,0x8d,0xa2,0x34,
 
-        // 0x3243f6a8,
-        // 0X885a308d,
-        // 0x313198a2,
-        // 0xe0370734,
-
-    const unsigned char k[16] ={ 
-        0x2b,0x28,0xab,0x09,
-        0x7e,0xae,0xf7,0xcf,
-        0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c
-    };
-    // e782c9bb 
-    // c569139b 
-    // 9589cca3 
-    // a32dc859 
-    // ---------------------------
-    // 1658f2ef 
-    // 2180928 
-    // 11a01987 
-    // e417b720
-    const unsigned char m[32] ={ 
-        0xe7, 0xc5, 0x95, 0xa3,   
-        0x82, 0x69, 0x89, 0x2d, 
-        0xc9, 0x13, 0xcc, 0xc8,
-        0xbb, 0x9b, 0xa3, 0x59,
-
-        0x16,0x02,0x11,0xe4,
-        0x58,0x18,0xa0,0x17,
-        0xf2,0x09,0x19,0xb7,
-        0xef,0x28,0x87,0x20,
-    };
-    const unsigned char m2[32] ={ 
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
-
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
-    };
-    unsigned long long mlen=32;
-    // 3032ee6f 
-    // 887fdf09 
-    // 6cfe75e7 
-    // 7fad48b6 
-    unsigned char c[16]={
-        0x30, 0x88, 0x6c, 0x7f,   
-        0x32, 0x7f, 0xfe, 0xad, 
-        0xee, 0xdf, 0x75, 0x48,
-        0x6f, 0x09, 0xe7, 0xb6,
-    };
+    unsigned long long mlen=17;
     unsigned long long *clen;
     unsigned long long adlen = 32;
-    const unsigned char ad[32] ={ 
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
 
-        0x32,0x88,0x31,0xe0,
-        0x43,0x5a,0x31,0x37,
-        0xf6,0x30,0x98,0x07,
-        0xa8,0x8d,0xa2,0x34,
+    unsigned char k[16] = {
+        0x2b, 0x7e, 0x15, 0x16, 
+        0x28, 0xae, 0xd2, 0xa6, 
+        0xab, 0xf7, 0x15, 0x88,
+        0x09, 0xcf, 0x4f, 0x3c,
+    };
+   
+    const unsigned char m[mlen] ={ 
+        0x32, 0x43, 0xf6, 0xa8,
+        0x88, 0x5a, 0x30, 0x8d, 
+        0x31, 0x31, 0x98, 0xa2, 
+        0xe0, 0x37, 0x07, 0x34,
+
+        0x32, 
+    };
+    // const unsigned char m2[mlen] ={ 
+    //     0x32,0x88,0x31,0xe0,
+    //     0x43,0x5a,0x31,0x37,
+    //     0xf6,0x30,0x98,0x07,
+    //     0xa8,0x8d,0xa2,0x34,
+
+    //     0x32,0x88,0x31,0xe0,
+    //     0x43,0x5a,0x31,0x37,
+    //     0xf6,0x30,0x98,0x07,
+    //     0xa8,0x8d,0xa2,0x34,
+    // };
+    unsigned char c[mlen]={0};
+    
+    const unsigned char ad[adlen] ={ 
+        0x32, 0x43, 0xf6, 0xa8,
+        0x88, 0x5a, 0x30, 0x8d, 
+        0x31, 0x31, 0x98, 0xa2, 
+        0xe0, 0x37, 0x07, 0x34,
+
+        0x32, 0x43, 0xf6, 0xa8,
+        0x88, 0x5a, 0x30, 0x8d, 
+        0x31, 0x31, 0x98, 0xa2, 
+        0xe0, 0x37, 0x07, 0x34,
     };
    
 
-    const unsigned char *nsec;
+    const unsigned char nsec[16] ={
+        0x32, 0x43, 0xf6, 0xa8,
+        0x88, 0x5a, 0x30, 0x8d, 
+        0x31, 0x31, 0x98, 0xa2, 
+        0xe0, 0x37, 0x07, 0x34,
+    };
     unsigned char *nsec2;
     const unsigned char *npub; 
 
-    crypto_aead_encrypt(c, clen, m2, mlen, ad, adlen, nsec, npub, k);
+    crypto_aead_encrypt(c, clen, m, mlen, ad, adlen, nsec, npub, k);
     // unsignedCharArrayTounsignedIntArray(m,m2,mlen);
     // imprimiArreglo(mlen/4,m2);
     // crypto_aead_decrypt(c, clen, nsec2, m, mlen, ad, adlen, npub, k);
