@@ -14,6 +14,10 @@ void calculateChecksum(block *checksum, block * nonce, block128 *Stag, unsigned 
 void calculateAssociatedData(const unsigned char *ad, unsigned char *nsec, long adLength, block *keys,unsigned char *key128, block128 *Stag, int number_of_rounds);
 void key128tokey512(unsigned char Expandkey128[176], unsigned char Expandkey512[704]);
 static inline void AES_ecb128_encrypt_blks(block128 *in, block128 *out, unsigned nblks, unsigned char *key, unsigned rounds);
+#define swap_if_le(b) \
+      _mm_shuffle_epi8(b,_mm_set_epi8(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))//_mm512_shuffle_epi8 _mm512_set_epi8
+#define swap_if_le512(b) \
+      _mm512_shuffle_epi8(b,_mm512_set_epi8(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))//_mm512_shuffle_epi8 _mm512_set_epi8
 
 inline __m128i AES_128_ASSIST (__m128i temp1, __m128i temp2)
 {
@@ -300,10 +304,19 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
             checksum[0] = _mm512_xor_si512(checksum[0], tmp[j]);
         }
        
+       
         //calculo del nonce
         for(j=0; j < blocks; j++){
-            cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
+            //calculo del nonce
+            nonce[j] = swap_if_le512(nonce[j]);
+            blockSum = swap_if_le512(blockSum);
+            blockOnly4 = swap_if_le512(blockOnly4);
+            cipherNonceTemp[j] =swap_if_le512( _mm512_add_epi32 (nonce[j], blockSum ));
             blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+            //calculo del nonce
+            nonce[j] = swap_if_le512(nonce[j]);
+            blockSum = swap_if_le512(blockSum);
+            blockOnly4 = swap_if_le512(blockOnly4);
         }
         
         //cifrado de dos rondas del nonce
@@ -338,9 +351,19 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         tmp[j] = _mm512_loadu_si512(&((__m512i*)in)[i+j]);
     }
     
+
     for(j=0; j < tempLength-1; j++){
+        nonce[j] = swap_if_le512(nonce[j]);
+        blockSum = swap_if_le512(blockSum);
+        blockOnly4 = swap_if_le512(blockOnly4);
+
         cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
         blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+        
+        cipherNonceTemp[j]=swap_if_le512(nonce[j]);
+        nonce[j] = swap_if_le512(nonce[j]);
+        blockSum = swap_if_le512(blockSum);
+        blockOnly4 = swap_if_le512(blockOnly4);
     }
     for(j = 0; j<tempLength-1; j++ ){
         checksum[0] = _mm512_xor_si512(checksum[0], tmp[j]);
@@ -405,8 +428,14 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
     __m128i add1 = _mm_set_epi8 (0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00);
     __m128i tmpfinalBlock[ sizefinalBlockArray ];
 
+    nonce[0] = swap_if_le512(nonce[0]);
+    blockSum = swap_if_le512(blockSum);
     cipherNonceTemp[0] = _mm512_add_epi32 (nonce[0], blockSum );
     
+    nonce[0] = swap_if_le512(nonce[0]);
+    blockSum = swap_if_le512(blockSum);
+    cipherNonceTemp[0] = swap_if_le512(cipherNonceTemp[0]);
+
     for(j=0; j<sizefinalBlockArray; j++){
         finalBlock[j] =  _mm_loadu_si128(&((__m128i*)finalblockChar)[j]);
         delta128[j] =  _mm_loadu_si128(&((__m128i*)cipherNonceTemp)[j]);
@@ -419,8 +448,13 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
             printf("%x ",impresion[j]);
         }
 
-        delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
+        add1 = swap_if_le(add1);
+        delta128[sizefinalBlockArray-1] = swap_if_le(delta128[sizefinalBlockArray-1]);
         
+        delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
+
+        add1 = swap_if_le(add1);
+        delta128[sizefinalBlockArray-1] = swap_if_le(delta128[sizefinalBlockArray-1]);
         // AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
         AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
         
@@ -465,7 +499,14 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
     
     indiceBlockSum = sizefinalBlockArray; 
     if(sizefinalBlockArray>3){
+        blockOnly4 = swap_if_le512(blockOnly4);
+        blockSum = swap_if_le512(blockSum);
+
         blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+
+        blockOnly4 = swap_if_le512(blockOnly4);
+        blockSum = swap_if_le512(blockSum);
+
         indiceBlockSum=0;
     }
    
@@ -597,11 +638,19 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
             blocks++;
         }
 
-       
+        
         //calculo del nonce
         for(j=0; j < blocks; j++){
-            cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
+            blockOnly4 = swap_if_le512(blockOnly4);
+            blockSum = swap_if_le512(blockSum);
+            nonce[j] = swap_if_le512(nonce[j]);
+
+            cipherNonceTemp[j] = swap_if_le512(_mm512_add_epi32 (nonce[j], blockSum ));
             blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+
+            blockOnly4 = swap_if_le512(blockOnly4);
+            blockSum = swap_if_le512(blockSum);
+            nonce[j] = swap_if_le512(nonce[j]);
         }
 
 
@@ -652,8 +701,17 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
     }
     
     for(j=0; j < tempLength-1; j++){
-        cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
+
+        blockOnly4 = swap_if_le512(blockOnly4);
+        blockSum = swap_if_le512(blockSum);
+        nonce[j] = swap_if_le512(nonce[j]);
+
+        cipherNonceTemp[j] = swap_if_le512(_mm512_add_epi32 (nonce[j], blockSum ));
         blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+
+        blockOnly4 = swap_if_le512(blockOnly4);
+        blockSum = swap_if_le512(blockSum);
+        nonce[j] = swap_if_le512(nonce[j]);
     }
     
 
@@ -712,8 +770,15 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
     __m128i add1 = _mm_set_epi8 (0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00);
     __m128i tmpfinalBlock[ sizefinalBlockArray ];
 
-    cipherNonceTemp[0] = _mm512_add_epi32 (nonce[0], blockSum );
+    nonce[0] = swap_if_le512(nonce[0]);
+    blockSum = swap_if_le512(blockSum);
+
+    cipherNonceTemp[0] = swap_if_le512 (_mm512_add_epi32 (nonce[0], blockSum ));
     
+    nonce[0] = swap_if_le512(nonce[0]);
+    blockSum = swap_if_le512(blockSum);
+
+
     for(j=0; j<sizefinalBlockArray; j++){
         finalBlock[j] =  _mm_loadu_si128(&((__m128i*)finalblockChar)[j]);
         delta128[j] =  _mm_loadu_si128(&((__m128i*)cipherNonceTemp)[j]);
@@ -726,8 +791,15 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
         //     printf("%x ",impresion[j]);
         // }
 
+        add1 = swap_if_le(add1);
+        delta128[sizefinalBlockArray-1] = swap_if_le(delta128[sizefinalBlockArray-1]);
+
         delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
         
+        add1 = swap_if_le(add1);
+        delta128[sizefinalBlockArray-1] = swap_if_le(delta128[sizefinalBlockArray-1]);
+
+
         // AES_ecb128_encrypt_blks(delta128, delta128, sizefinalBlockArray, key128 , 3);
         AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
         
@@ -786,7 +858,14 @@ int number_of_rounds) //number of AES rounds 10,12 or 14
 
     indiceBlockSum = sizefinalBlockArray; 
     if(sizefinalBlockArray>3){
+        blockSum = swap_if_le512(blockSum);
+        blockSum = swap_if_le512(blockSum);
+
         blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+
+        blockSum = swap_if_le512(blockSum);
+        blockSum = swap_if_le512(blockSum);
+        
         indiceBlockSum=0;
     }
    
@@ -896,8 +975,17 @@ void calculateAssociatedData(
        
         //calculo del nonce
         for(j=0; j < blocks; j++){
-            cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
+
+            blockOnly4 = swap_if_le512(blockOnly4);
+            blockSum = swap_if_le512(blockSum);
+            nonce[j] = swap_if_le512(nonce[j]);
+
+            cipherNonceTemp[j] = swap_if_le512 (_mm512_add_epi32 (nonce[j], blockSum ));
             blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+
+            blockOnly4 = swap_if_le512(blockOnly4);
+            blockSum = swap_if_le512(blockSum);
+            nonce[j] = swap_if_le512(nonce[j]);
         }
         
         //cifrado de dos rondas del nonce
@@ -931,8 +1019,17 @@ void calculateAssociatedData(
     }
     
     for(j=0; j < tempLength-1; j++){
-        cipherNonceTemp[j] = _mm512_add_epi32 (nonce[j], blockSum );
+        blockOnly4 = swap_if_le512(blockOnly4);
+        blockSum = swap_if_le512(blockSum);
+        nonce[j] = swap_if_le512(nonce[j]);
+        
+        cipherNonceTemp[j] = swap_if_le512 (_mm512_add_epi32 (nonce[j], blockSum ));
         blockSum = _mm512_add_epi32 (blockOnly4, blockSum );
+
+        blockOnly4 = swap_if_le512(blockOnly4);
+        blockSum = swap_if_le512(blockSum);
+        nonce[j] = swap_if_le512(nonce[j]);
+    
     }
    
     //cifrado de dos rondas del nonce
@@ -984,15 +1081,32 @@ void calculateAssociatedData(
     __m128i add1 = _mm_set_epi8 (0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00);
     __m128i tmpfinalBlock[ sizefinalBlockArray ];
     __m128i Ek1_128;
-    cipherNonceTemp[0] = _mm512_add_epi32 (nonce[0], blockSum );
+
+    nonce[0] = swap_if_le512(nonce[0]);
+    blockSum = swap_if_le512(blockSum);
     
+
+    cipherNonceTemp[0] = swap_if_le512( _mm512_add_epi32 (nonce[0], blockSum ) );
+
+    nonce[0] = swap_if_le512(nonce[0]);
+    blockSum = swap_if_le512(blockSum);
+
     Ek1_128 =  _mm_loadu_si128(&((__m128i*)Ek1)[0]);
     for(j=0; j<sizefinalBlockArray; j++){
         finalBlock[j] =  _mm_loadu_si128(&((__m128i*)finalblockChar)[j]);
         delta128[j] =  _mm_loadu_si128(&((__m128i*)cipherNonceTemp)[j]);
     }
     if(finalBlocklenght%16 != 0){
+
+
+        delta128[sizefinalBlockArray-1] = swap_if_le(delta128[sizefinalBlockArray-1]);
+        add1 = swap_if_le(add1);
+        
         delta128[sizefinalBlockArray-1] = _mm_add_epi32( add1,delta128[sizefinalBlockArray-1]);
+
+        delta128[sizefinalBlockArray-1] = swap_if_le(delta128[sizefinalBlockArray-1]);
+        add1 = swap_if_le(add1);
+
         AES_ecb128_encrypt_blks_rounds(delta128, delta128, sizefinalBlockArray, key128 , 3);
 
         for(j=0; j<sizefinalBlockArray; j++){
@@ -1079,8 +1193,16 @@ int number_of_rounds)//number of AES rounds 10,12 or 14
         __m128i addIndice =  _mm_loadu_si128(&((__m128i* )blocktemp)[indiceBlockSum]);
         
         
+        nonce128 = swap_if_le(nonce128);
+        deltaChecksum = swap_if_le(deltaChecksum);
+        addIndice = swap_if_le(addIndice);
+
         deltaChecksum = _mm_add_epi32(deltaChecksum, nonce128);
         deltaChecksum = _mm_add_epi32(deltaChecksum, addIndice);
+
+        nonce128 = swap_if_le(nonce128);
+        deltaChecksum = swap_if_le(deltaChecksum);
+        addIndice = swap_if_le(addIndice);
 
         // //suma de las variables de checksum
         __m128i checksumFinal  = _mm_setzero_si128();
@@ -1163,9 +1285,8 @@ int main(){
         0x88, 0x5a, 0x30, 0x8d, 
         0x31, 0x31, 0x98, 0xa2, 
         0xe0, 0x37, 0x07, 0x34,
-        0x34,
     };
-    unsigned adlen = 17;
+    unsigned adlen = 16;
     unsigned char nonce[64] = {
         0x32, 0x43, 0xf6, 0xa8,
         0X88, 0X5a, 0X30, 0X8d,
