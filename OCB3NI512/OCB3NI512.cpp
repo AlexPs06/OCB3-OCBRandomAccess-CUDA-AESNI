@@ -335,7 +335,17 @@ static inline void AES_ecb_encrypt_blks_512(block512 *blks, unsigned nblks, AES_
 	for (i=0; i<nblks; ++i)
 	    blks[i] =_mm512_aesenclast_epi128(blks[i], sched[j]);
 }
-
+static inline void AES_ecb_decrypt_blks_512(block512 *blks, unsigned nblks, AES_KEY_512 *key) {
+    unsigned i,j,rnds=ROUNDS(key);
+	const __m512i *sched = ((__m512i *)(key->rd_key));
+	for (i=0; i<nblks; ++i)
+	    blks[i] =_mm512_xor_si512(blks[i], sched[0]);
+	for(j=1; j<rnds; ++j)
+	    for (i=0; i<nblks; ++i)
+		    blks[i] = _mm512_aesdec_epi128(blks[i], sched[j]);
+	for (i=0; i<nblks; ++i)
+	    blks[i] =_mm512_aesdeclast_epi128(blks[i], sched[j]);
+}
 static inline void AES_ecb_decrypt_blks(block *blks, unsigned nblks, AES_KEY *key) {
     unsigned i,j,rnds=ROUNDS(key);
 	const __m128i *sched = ((__m128i *)(key->rd_key));
@@ -548,103 +558,184 @@ static block gen_offset_from_nonce(ae_ctx *ctx, const void *nonce)
 
 static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 {
-	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
-    block ad_offset, ad_checksum;
-    const block *  adp = (block *)ad;
+	int temp_len = ad_len;
+	union { uint32_t u32[16]; uint8_t u8[64]; block512 bl; } tmp;
+    block512  ad_checksum;
+    const block512 *  adp = (block512 *)ad;
 	unsigned i,k,tz,remaining;
-
-    ad_offset = ctx->ad_offset;
-    ad_checksum = ctx->ad_checksum;
+	unsigned ad_block_num;
+	block ad_offset;
+    ad_offset = zero_block(); //ctx->ad_offset; 
+	
+    ad_checksum = 	zero_block_512(); //ctx->ad_checksum;
     i = ad_len/(BPI*16);
     if (i) {
-		unsigned ad_block_num = ctx->ad_blocks_processed;
+		ad_block_num = ctx->ad_blocks_processed;
 		do {
-			block ta[BPI], oa[BPI];
+			block512 oa512[BPI];
+			block  oa[BPI];
 			ad_block_num += BPI;
 			tz = ntz(ad_block_num);
-			oa[0] = xor_block(ad_offset, ctx->L[0]);
-			ta[0] = xor_block(oa[0], adp[0]);
-			oa[1] = xor_block(oa[0], ctx->L[1]);
-			ta[1] = xor_block(oa[1], adp[1]);
-			oa[2] = xor_block(ad_offset, ctx->L[1]);
-			ta[2] = xor_block(oa[2], adp[2]);
+			block512 ta[BPI];
+			
+            for(int j = 0; j<BPI; j++){
+				oa[0] = xor_block(ad_offset, ctx->L[0]);
+				oa[1] = xor_block(oa[0], ctx->L[1]);
+				oa[2] = xor_block(ad_offset, ctx->L[1]);
+				ad_offset = oa[3] = xor_block(oa[2], getL(ctx, tz));
+
+                oa512[j] = _mm512_castsi128_si512( oa[0] );
+                oa512[j] = _mm512_inserti64x2( oa512[j],oa[1],1);
+                oa512[j] = _mm512_inserti64x2( oa512[j],oa[2],2);
+                oa512[j] = _mm512_inserti64x2( oa512[j],oa[3],3);
+			    ad_block_num += 4;
+
+            }
+            
+			ta[0] = xor_block_512(oa512[0], adp[0]);
+			ta[1] = xor_block_512(oa512[1], adp[1]);
+			ta[2] = xor_block_512(oa512[2], adp[2]);
 			#if BPI == 4
-				ad_offset = xor_block(oa[2], getL(ctx, tz));
-				ta[3] = xor_block(ad_offset, adp[3]);
-			#elif BPI == 8
-				oa[3] = xor_block(oa[2], ctx->L[2]);
-				ta[3] = xor_block(oa[3], adp[3]);
-				oa[4] = xor_block(oa[1], ctx->L[2]);
-				ta[4] = xor_block(oa[4], adp[4]);
-				oa[5] = xor_block(oa[0], ctx->L[2]);
-				ta[5] = xor_block(oa[5], adp[5]);
-				oa[6] = xor_block(ad_offset, ctx->L[2]);
-				ta[6] = xor_block(oa[6], adp[6]);
-				ad_offset = xor_block(oa[6], getL(ctx, tz));
-				ta[7] = xor_block(ad_offset, adp[7]);
+				ta[3] = xor_block_512(oa512[3], adp[3]);
 			#endif
-			AES_ecb_encrypt_blks(ta,BPI,&ctx->encrypt_key);
-			ad_checksum = xor_block(ad_checksum, ta[0]);
-			ad_checksum = xor_block(ad_checksum, ta[1]);
-			ad_checksum = xor_block(ad_checksum, ta[2]);
-			ad_checksum = xor_block(ad_checksum, ta[3]);
-			#if (BPI == 8)
-			ad_checksum = xor_block(ad_checksum, ta[4]);
-			ad_checksum = xor_block(ad_checksum, ta[5]);
-			ad_checksum = xor_block(ad_checksum, ta[6]);
-			ad_checksum = xor_block(ad_checksum, ta[7]);
-			#endif
+			AES_ecb_encrypt_blks_512(ta,BPI,&ctx->encrypt_key_512);
+
+			ad_checksum = xor_block_512(ad_checksum, ta[3]);
+			ad_checksum = xor_block_512(ad_checksum, ta[2]);
+			ad_checksum = xor_block_512(ad_checksum, ta[1]);
+			ad_checksum = xor_block_512(ad_checksum, ta[0]);
+
+		
 			adp += BPI;
 		} while (--i);
-		ctx->ad_blocks_processed = ad_block_num;
+		// ctx->ad_blocks_processed = ad_block_num;
 		ctx->ad_offset = ad_offset;
-		ctx->ad_checksum = ad_checksum;
+		// ctx->ad_checksum = ad_checksum;
 	}
 
     if (final) {
-		block ta[BPI];
+		block512 ta[BPI];
+		block oa[BPI];
+		block512 oa512[BPI];
 
         /* Process remaining associated data, compute its tag contribution */
-        remaining = ((unsigned)ad_len) % (BPI*16);
+        remaining = ((unsigned)ad_len) % (BPI*64);
         if (remaining) {
 			k=0;
-			#if (BPI == 8)
-			if (remaining >= 64) {
-				tmp.bl = xor_block(ad_offset, ctx->L[0]);
-				ta[0] = xor_block(tmp.bl, adp[0]);
-				tmp.bl = xor_block(tmp.bl, ctx->L[1]);
-				ta[1] = xor_block(tmp.bl, adp[1]);
-				ad_offset = xor_block(ad_offset, ctx->L[1]);
-				ta[2] = xor_block(ad_offset, adp[2]);
-				ad_offset = xor_block(ad_offset, ctx->L[2]);
-				ta[3] = xor_block(ad_offset, adp[3]);
-				remaining -= 64;
-				k=4;
-			}
-			#endif
-			if (remaining >= 32) {
-				ad_offset = xor_block(ad_offset, ctx->L[0]);
-				ta[k] = xor_block(ad_offset, adp[k]);
-				ad_offset = xor_block(ad_offset, getL(ctx, ntz(k+2)));
-				ta[k+1] = xor_block(ad_offset, adp[k+1]);
-				remaining -= 32;
+			
+			if (remaining >= 128) {
+
+				for(int j = k; j<k+2; j++){
+					oa[0] = xor_block(ctx->ad_offset, ctx->L[0]);
+                    oa[1] = xor_block(oa[0], ctx->L[1]);
+                    oa[2] = xor_block(oa[1], ctx->L[0]);
+                    ctx->ad_offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(ad_block_num)));
+
+                    oa512[j] = _mm512_castsi128_si512( oa[0] );
+                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[1],1);
+                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[2],2);
+                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[3],3);
+			        ad_block_num += 4;
+
+                }
+				ta[k] = xor_block_512(oa512[k], adp[k]);
+				ta[k+1] = xor_block_512(oa512[k+1], adp[k+1]);
+				remaining -= 128;
 				k+=2;
 			}
-			if (remaining >= 16) {
-				ad_offset = xor_block(ad_offset, ctx->L[0]);
-				ta[k] = xor_block(ad_offset, adp[k]);
-				remaining = remaining - 16;
+			if (remaining >= 64) {
+
+				oa[0] = xor_block(ctx->ad_offset, ctx->L[0]);
+                oa[1] = xor_block(oa[0], ctx->L[1]);
+                oa[2] = xor_block(oa[1], ctx->L[0]);
+                ctx->ad_offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(ad_block_num)));
+
+                oa512[k] = _mm512_castsi128_si512( oa[0] );
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[3],3);
+                ad_block_num += 4;
+
+				// offset = oa[k] = xor_block(offset, ctx->L[0]);
+				ta[k] = xor_block_512(oa512[k], adp[k]);
+				remaining -= 64;
 				++k;
+
 			}
 			if (remaining) {
-				ad_offset = xor_block(ad_offset,ctx->Lstar);
-				tmp.bl = zero_block();
+				
+				tmp.bl = zero_block_512();
 				memcpy(tmp.u8, adp+k, remaining);
 				tmp.u8[remaining] = (unsigned char)0x80u;
-				ta[k] = xor_block(ad_offset, tmp.bl);
+
+                if(remaining/16==0 || remaining ==16 ){
+                    ctx->ad_offset = oa[0] = xor_block(ctx->ad_offset, ctx->L[0]);
+
+					
+
+                    if(remaining%16 !=0)
+						ctx->ad_offset = oa[0] = xor_block(oa[0],ctx->Lstar);
+                    
+					oa512[k] = _mm512_castsi128_si512( oa[0] );
+                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),1);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),2);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+                } else if(remaining/16==1 || remaining == 32){
+                   
+					
+					oa[0] = xor_block(ctx->ad_offset, ctx->L[0]);
+
+                    ctx->ad_offset = oa[1] = xor_block(oa[0], ctx->L[1]);
+
+					if(remaining%16 !=0)
+                    ctx->ad_offset = oa[1] = xor_block(oa[0],ctx->Lstar);
+
+					
+
+                    oa512[k] = _mm512_castsi128_si512( oa[0] );
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),2);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+                } else if(remaining/16==2 || remaining == 48){
+                    oa[0] = xor_block(ctx->ad_offset, ctx->L[0]);
+                    oa[1] = xor_block(oa[0], ctx->L[1]);
+                    ctx->ad_offset = oa[2] = xor_block(oa[1], ctx->L[0]);
+
+                    
+					if(remaining%16 !=0)
+					ctx->ad_offset = oa[2] = xor_block(oa[1],ctx->Lstar);
+
+
+                    oa512[k] = _mm512_castsi128_si512( oa[0] );
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+                }else  if(remaining/16==3){
+                    oa[0] = xor_block(ctx->ad_offset, ctx->L[0]);
+                    oa[1] = xor_block(oa[0], ctx->L[1]);
+                    oa[2] = xor_block(oa[1], ctx->L[0]);
+					
+
+                    ctx->ad_offset = oa[3] = xor_block(oa[2],ctx->Lstar);
+                    oa512[k] = _mm512_castsi128_si512( oa[0] );
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
+                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+
+                }
+               
+                int index = floor((remaining/16)) * 16;
+                memcpy(tmp.u8, adp+k, index );
+				ta[k] = xor_block_512(oa512[k],tmp.bl);
+
+				
 				++k;
+
+
+				
 			}
-			AES_ecb_encrypt_blks(ta,k,&ctx->encrypt_key);
+			AES_ecb_encrypt_blks_512(ta,k,&ctx->encrypt_key_512);
+			
 			switch (k) {
 				#if (BPI == 8)
 				case 8: ad_checksum = xor_block(ad_checksum, ta[7]);
@@ -652,12 +743,29 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 				case 6: ad_checksum = xor_block(ad_checksum, ta[5]);
 				case 5: ad_checksum = xor_block(ad_checksum, ta[4]);
 				#endif
-				case 4: ad_checksum = xor_block(ad_checksum, ta[3]);
-				case 3: ad_checksum = xor_block(ad_checksum, ta[2]);
-				case 2: ad_checksum = xor_block(ad_checksum, ta[1]);
-				case 1: ad_checksum = xor_block(ad_checksum, ta[0]);
+				case 4: ad_checksum = xor_block_512(ad_checksum, ta[3]);
+				case 3: ad_checksum = xor_block_512(ad_checksum, ta[2]);
+				case 2: ad_checksum = xor_block_512(ad_checksum, ta[1]);
+				case 1: ad_checksum = xor_block_512(ad_checksum, ta[0]);
 			}
-			ctx->ad_checksum = ad_checksum;
+			// ctx->ad_checksum = ad_checksum;
+
+			__m128i checksumBlock[4];
+			checksumBlock[0] =  _mm_loadu_si128(&((__m128i*)&ad_checksum)[0]);
+    		checksumBlock[1] =  _mm_loadu_si128(&((__m128i*)&ad_checksum)[1]);
+    		checksumBlock[2] =  _mm_loadu_si128(&((__m128i*)&ad_checksum)[2]);
+    		checksumBlock[3] =  _mm_loadu_si128(&((__m128i*)&ad_checksum)[3]);
+			__m128i checksumFinal  = _mm_setzero_si128();
+			i=0;
+			while(temp_len>0 and i<4){
+				checksumFinal =  _mm_xor_si128( checksumFinal, checksumBlock[i]);
+				temp_len = temp_len-16;
+				i++;
+			}
+			ctx->ad_checksum = checksumFinal;
+
+			
+			
 		}
 	}
 }
@@ -676,13 +784,15 @@ int ae_encrypt(ae_ctx     *  ctx,
                void       *tag,
                int         final)
 {
+    
 	int temp_len = pt_len;
-	union { uint32_t u32[16]; uint8_t u8[64]; block512 bl; } tmp;
+	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
     block512 offset, checksum;
     unsigned i, k;
     block512       * ctp = (block512 *)ct;
     const block512 * ptp = (block512 *)pt;
-	unsigned block_num;
+	block       *ptp128 = (block *)pt;
+    unsigned block_num;
     
 	/* Non-null nonce means start of new message, init per-message values */
     if (nonce) {
@@ -763,6 +873,8 @@ int ae_encrypt(ae_ctx     *  ctx,
         unsigned remaining = ((unsigned)pt_len) % (BPI*64);
         k = 0;                      /* How many blocks in ta[] need ECBing */
         oa[BPI-1] = ctx->offset;
+        block temp128[4];
+        unsigned l=0;
         if (remaining) {
 			
 			if (remaining >= 128) {
@@ -805,84 +917,190 @@ int ae_encrypt(ae_ctx     *  ctx,
 				++k;
 
 			}
-			if (remaining) {
-				tmp.bl = zero_block_512();
-				memcpy(tmp.u8, ptp+k, remaining);
-				tmp.u8[remaining] = (unsigned char)0x80u;
-				checksum = xor_block_512(checksum, tmp.bl);
 
-                if(remaining/16==0 || remaining ==16 ){
-                    ctx->offset = oa[0] = xor_block(ctx->offset, ctx->L[0]);
+            if (remaining >= 32) {
+                
+                ta[k]=zero_block_512();
 
-					
+                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[k])[l]);
+    	        temp128[l+1] =  _mm_loadu_si128(&((__m128i*)&ptp[k])[l+1]);
+    	        block_num += 2;
 
-                    if(remaining%16 !=0)
-						ctx->offset = oa[0] = xor_block(oa[0],ctx->Lstar);
-                    
-					oa512[k] = _mm512_castsi128_si512( oa[0] );
-                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),1);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),2);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
-                } else if(remaining/16==1 || remaining == 32){
-                    oa[0] = xor_block(ctx->offset, ctx->L[0]);
-                    ctx->offset = oa[1] = xor_block(oa[0], ctx->L[1]);
+                block512 tmp512 = _mm512_castsi128_si512( temp128[l] );
+				checksum = xor_block_512(checksum, tmp512);
+                
+                tmp512 = _mm512_castsi128_si512( temp128[l+1] );
+				checksum = xor_block_512(checksum, tmp512);
 
-					
-
-					if(remaining%16 !=0)
-                    ctx->offset = oa[1] = xor_block(oa[1],ctx->Lstar);
+                oa[0] = xor_block(ctx->offset, ctx->L[0]);
+				
+                // ta[k] = xor_block(oa[0], temp128[l]);
+                ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
 
 
-                    oa512[k] = _mm512_castsi128_si512( oa[0] );
-                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),2);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
-                } else if(remaining/16==2 || remaining == 48){
-                    oa[0] = xor_block(ctx->offset, ctx->L[0]);
-                    oa[1] = xor_block(oa[0], ctx->L[1]);
-                    ctx->offset = oa[2] = xor_block(oa[1], ctx->L[0]);
-
-                    
-					if(remaining%16 !=0)
-					ctx->offset = oa[2] = xor_block(oa[2],ctx->Lstar);
+				ctx->offset = oa[1] = xor_block(oa[0], ctx->L[1]);
 
 
-                    oa512[k] = _mm512_castsi128_si512( oa[0] );
-                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
-                }else  if(remaining/16==3){
-                    oa[0] = xor_block(ctx->offset, ctx->L[0]);
-                    oa[1] = xor_block(oa[0], ctx->L[1]);
-                    oa[2] = xor_block(oa[1], ctx->L[0]);
-					ctx->offset = oa[3] = xor_block(oa[3], getL(ctx, ntz(block_num)));
-					// if(remaining%16 !=0)
-                    // ctx->offset  = oa[3] = xor_block(oa[3], getL(ctx, ntz(block_num)));
+                ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[1], temp128[l+1]) ,1); 
+                
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+				// ta[k+1] = xor_block(ctx->offset, ctp[k+1]);
+				
+                remaining -= 32;
+                l+=2;
 
-                    ctx->offset = oa[3] = xor_block(oa[3],ctx->Lstar);
-                    oa512[k] = _mm512_castsi128_si512( oa[0] );
-                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
-                    oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
 
+			}
+			if (remaining >= 16) {
+                
+                block_num += 1;
+                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[k])[l]);
+
+                block512 tmp512 = _mm512_castsi128_si512( temp128[l] );
+				checksum = xor_block_512(checksum, tmp512);
+
+				ctx->offset = oa[0] = xor_block(ctx->offset, ctx->L[0]);
+                if(l==0){
+                    ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
                 }
+
+                if(l==2){
+                    ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,2); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],2);
+                }
+
+				// offset = oa[k] = xor_block(ctx->offset, ctx->L[0]);
+				// ta[k] = xor_block(offset, ctp[k]);
+				remaining -= 16;
+				++l;
+			}
+			if (remaining) {
+                
+                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[k])[l]);
+
+
+                tmp.bl = zero_block();
+				memcpy(tmp.u8,  ptp128+block_num, remaining);
+				tmp.u8[remaining] = (unsigned char)0x80u;
+
+                block512 tmp512 = _mm512_castsi128_si512( tmp.bl );
+				checksum = xor_block_512(checksum, tmp512);
+                
+                
+				oa[0] = ctx->offset = xor_block(ctx->offset,ctx->Lstar);
+                if(l==0){
+                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,0); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,0);
+                }
+                if(l==1){
+                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,1); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,1);
+                }
+                if(l==2){
+                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,2); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,2);
+                }
+                if(l==3){
+                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,3); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,3);
+                }
+			}
+
+			// if (remaining) {
+			// 	tmp.bl = zero_block_512();
+			// 	memcpy(tmp.u8, ptp+k, remaining);
+			// 	tmp.u8[remaining] = (unsigned char)0x80u;
+			// 	checksum = xor_block_512(checksum, tmp.bl);
+
+            //     if(remaining/16==0 || remaining ==16 ){
+            //         ctx->offset = oa[0] = xor_block(ctx->offset, ctx->L[0]);
+
+					
+
+            //         if(remaining%16 !=0)
+			// 			ctx->offset = oa[0] = xor_block(oa[0],ctx->Lstar);
+                    
+			// 		oa512[k] = _mm512_castsi128_si512( oa[0] );
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),1);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),2);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+            //     } else if(remaining/16==1 || remaining == 32){
+            //         oa[0] = xor_block(ctx->offset, ctx->L[0]);
+            //         ctx->offset = oa[1] = xor_block(oa[0], ctx->L[1]);
+
+					
+
+			// 		if(remaining%16 !=0)
+            //         ctx->offset = oa[1] = xor_block(oa[0],ctx->Lstar);
+
+            //         // printf("------\n"); 
+		    //         // imprimiArreglo(pt_len,(unsigned char *)&oa[0]);
+		    //         // printf("------\n");
+            //         // printf("------\n"); 
+		    //         // imprimiArreglo(16,(unsigned char *)&oa[1]);
+		    //         // printf("------\n");
+            //         oa512[k] = _mm512_castsi128_si512( oa[0] );
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),2);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+            //     } else if(remaining/16==2 || remaining == 48){
+            //         oa[0] = xor_block(ctx->offset, ctx->L[0]);
+            //         oa[1] = xor_block(oa[0], ctx->L[1]);
+            //         ctx->offset = oa[2] = xor_block(oa[1], ctx->L[0]);
+
+                    
+			// 		if(remaining%16 !=0)
+			// 		ctx->offset = oa[2] = xor_block(oa[1],ctx->Lstar);
+
+
+            //         oa512[k] = _mm512_castsi128_si512( oa[0] );
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+            //     }else  if(remaining/16==3){
+            //         oa[0] = xor_block(ctx->offset, ctx->L[0]);
+            //         oa[1] = xor_block(oa[0], ctx->L[1]);
+            //         oa[2] = xor_block(oa[1], ctx->L[0]);
+			// 		ctx->offset = oa[3] = xor_block(oa[3], getL(ctx, ntz(block_num)));
+			// 		// if(remaining%16 !=0)
+            //         // ctx->offset  = oa[3] = xor_block(oa[3], getL(ctx, ntz(block_num)));
+
+            //         ctx->offset = oa[3] = xor_block(oa[3],ctx->Lstar);
+            //         oa512[k] = _mm512_castsi128_si512( oa[0] );
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
+            //         oa512[k] = _mm512_inserti64x2( oa512[k],zero_block(),3);
+
+            //     }
                
-                int index = floor((remaining/16)) * 16;
-                memcpy(tmp.u8, ptp+k, index );
-				ta[k] = xor_block_512(oa512[k],tmp.bl);
+            //     // int index = floor((remaining/16)) * 16;
+            //     // memcpy(tmp.u8, ptp+k, index );
+			// 	ta[k] = xor_block_512(oa512[k],tmp.bl);
 
 				
-				++k;
-			}
+			// 	++k;
+			// }
 		}
-		int restante = remaining%16; 
+        if(k==0){
+            k=1;
+        }
 	
-		AES_ecb_encrypt_blks_512(ta,k,&ctx->encrypt_key_512);
-		// printf("------\n");
-		// imprimiArreglo(16,(unsigned char *)&ta[k-1]);
-		// printf("------\n");
+      
 
-        
+		AES_ecb_encrypt_blks_512(ta,k,&ctx->encrypt_key_512);
+		
+        // for(int i=0;i<k;i++){
+        //     printf("------\n"); 
+		//     imprimiArreglo(32,(unsigned char *)&ta[i]);
+		//     printf("------\n");
+        // }
+        // printf("------\n"); 
+		//     imprimiArreglo(32,(unsigned char *)&oa512[0]);
+		//     printf("------\n");
+
+
 		__m128i checksumBlock[4];
 		checksumBlock[0] =  _mm_loadu_si128(&((__m128i*)&checksum)[0]);
     	checksumBlock[1] =  _mm_loadu_si128(&((__m128i*)&checksum)[1]);
@@ -895,25 +1113,20 @@ int ae_encrypt(ae_ctx     *  ctx,
 			temp_len = temp_len-16;
 			i++;
 		}
-
-		printf("------\n");
-		imprimiArreglo(16,(unsigned char *)&ctx->offset);
-		printf("------\n");
+        // printf("\n---------------------------\n");
+        // imprimiArreglo(16,(unsigned char *)&checksumFinal);
+        // printf("\n---------------------------\n");
+		
 		ctx->offset = xor_block(ctx->offset, ctx->Ldollar);      /* Part of tag gen */
-		printf("------\n");
-		imprimiArreglo(16,(unsigned char *)&ctx->offset);
-		printf("------\n");
-		checksumFinal = xor_block(ctx->offset, checksumFinal);           /* Part of tag gen */
 		
+		
+        
+
+        checksumFinal = xor_block(ctx->offset, checksumFinal);           /* Part of tag gen */
 		AES_ecb_encrypt_blks(&checksumFinal,1,&ctx->encrypt_key);
-		
 		checksumFinal = xor_block(checksumFinal, ctx->ad_checksum);   /* Part of tag gen */
 		
-		if (restante>0) {
-			--k;
-			tmp.bl = xor_block_512(tmp.bl, ta[k]);
-			memcpy(ctp+k, tmp.u8, restante);
-		}
+
 		
 		switch (k) {
 			
@@ -921,6 +1134,12 @@ int ae_encrypt(ae_ctx     *  ctx,
 			case 2: _mm512_storeu_si512(&((__m512i*)ctp)[1],xor_block_512(ta[1], oa512[1]));
 			case 1: _mm512_storeu_si512(&((__m512i*)ctp)[0],xor_block_512(ta[0], oa512[0]));
 		}
+
+        // if (remaining) {
+		// 	tmp.bl = xor_block(tmp.bl, ta[k]);
+		// 	memcpy(ctp+k, tmp.u8, remaining);
+		// }
+
         /* Tag is placed at the correct location
          */
         if (tag) {
@@ -975,15 +1194,19 @@ int ae_decrypt(ae_ctx     *ctx,
                const void *ad,
                int         ad_len,
                void       *pt,
-               const void *tag,
+               void *tag,
                int         final)
 {
 	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
-    block offset, checksum;
+	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp2;
+    block512 checksum;
+    block offset;
     unsigned i, k;
-    block       *ctp = (block *)ct;
-    block       *ptp = (block *)pt;
-
+    block512       *ctp = (block512 *)ct;
+    block512       *ptp = (block512 *)pt;
+    block       *ptp128 = (block *)pt;
+	unsigned block_num;
+    unsigned temp_len = ct_len;
 	/* Reduce ct_len tag bundled in ct */
 	if ((final) && (!tag))
 		#if (OCB_TAG_LEN > 0)
@@ -1007,143 +1230,299 @@ int ae_decrypt(ae_ctx     *ctx,
 
 	/* Encrypt plaintext data BPI blocks at a time */
     offset = ctx->offset;
-    checksum  = ctx->checksum;
-    i = ct_len/(BPI*16);
+    checksum  = zero_block_512();
+    i = ct_len/(BPI*64);
     if (i) {
     	block oa[BPI];
-    	unsigned block_num = ctx->blocks_processed;
-    	oa[BPI-1] = offset;
+    	block512 oa512[BPI];
+    	block_num = ctx->blocks_processed;
+    	oa[BPI-1] = ctx->offset;
 		do {
-			block ta[BPI];
-			block_num += BPI;
-			oa[0] = xor_block(oa[BPI-1], ctx->L[0]);
-			ta[0] = xor_block(oa[0], ctp[0]);
-			oa[1] = xor_block(oa[0], ctx->L[1]);
-			ta[1] = xor_block(oa[1], ctp[1]);
-			oa[2] = xor_block(oa[1], ctx->L[0]);
-			ta[2] = xor_block(oa[2], ctp[2]);
+			block512 ta[BPI];
+			
+            for(int j = 0; j<BPI; j++){
+                oa[0] = xor_block(oa[BPI-1], ctx->L[0]);
+                oa[1] = xor_block(oa[0], ctx->L[1]);
+                oa[2] = xor_block(oa[1], ctx->L[0]);
+                oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
+                
+
+                oa512[j] = _mm512_castsi128_si512( oa[0] );
+                oa512[j] = _mm512_inserti64x2( oa512[j],oa[1],1);
+                oa512[j] = _mm512_inserti64x2( oa512[j],oa[2],2);
+                oa512[j] = _mm512_inserti64x2( oa512[j],oa[3],3);
+			    block_num += 4;
+
+            }
+
+
+            ta[0] = xor_block_512(oa512[0], ctp[0]);
+			ta[1] = xor_block_512(oa512[1], ctp[1]);
+			ta[2] = xor_block_512(oa512[2], ctp[2]);
 			#if BPI == 4
-				oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
-				ta[3] = xor_block(oa[3], ctp[3]);
-			#elif BPI == 8
-				oa[3] = xor_block(oa[2], ctx->L[2]);
-				ta[3] = xor_block(oa[3], ctp[3]);
-				oa[4] = xor_block(oa[1], ctx->L[2]);
-				ta[4] = xor_block(oa[4], ctp[4]);
-				oa[5] = xor_block(oa[0], ctx->L[2]);
-				ta[5] = xor_block(oa[5], ctp[5]);
-				oa[6] = xor_block(oa[7], ctx->L[2]);
-				ta[6] = xor_block(oa[6], ctp[6]);
-				oa[7] = xor_block(oa[6], getL(ctx, ntz(block_num)));
-				ta[7] = xor_block(oa[7], ctp[7]);
+				ta[3] = xor_block_512(oa512[3], ctp[3]);
 			#endif
-			AES_ecb_decrypt_blks(ta,BPI,&ctx->decrypt_key);
-			ptp[0] = xor_block(ta[0], oa[0]);
-			checksum = xor_block(checksum, ptp[0]);
-			ptp[1] = xor_block(ta[1], oa[1]);
-			checksum = xor_block(checksum, ptp[1]);
-			ptp[2] = xor_block(ta[2], oa[2]);
-			checksum = xor_block(checksum, ptp[2]);
-			ptp[3] = xor_block(ta[3], oa[3]);
-			checksum = xor_block(checksum, ptp[3]);
-			#if (BPI == 8)
-			ptp[4] = xor_block(ta[4], oa[4]);
-			checksum = xor_block(checksum, ptp[4]);
-			ptp[5] = xor_block(ta[5], oa[5]);
-			checksum = xor_block(checksum, ptp[5]);
-			ptp[6] = xor_block(ta[6], oa[6]);
-			checksum = xor_block(checksum, ptp[6]);
-			ptp[7] = xor_block(ta[7], oa[7]);
-			checksum = xor_block(checksum, ptp[7]);
-			#endif
+
+            
+			
+
+			AES_ecb_decrypt_blks_512(ta,BPI,&ctx->decrypt_key_512);
+
+
+            ta[0] = xor_block_512(oa512[0], ta[0]);
+			ta[1] = xor_block_512(oa512[1], ta[1]);
+			ta[2] = xor_block_512(oa512[2], ta[2]);
+            ta[3] = xor_block_512(oa512[3], ta[3]);
+
+			checksum = xor_block_512(checksum, ta[0]);
+            checksum = xor_block_512(checksum, ta[1]);
+			checksum = xor_block_512(checksum, ta[2]);
+			checksum = xor_block_512(checksum, ta[3]);
+
+            _mm512_storeu_si512(&((__m512i*)ctp)[0],ta[0]);
+			_mm512_storeu_si512(&((__m512i*)ctp)[1],ta[1]);
+			_mm512_storeu_si512(&((__m512i*)ctp)[2],ta[2]);
+			_mm512_storeu_si512(&((__m512i*)ctp)[3],ta[3]);
+
+
 			ptp += BPI;
 			ctp += BPI;
+
+
+			// block ta[BPI];
+			// block_num += BPI;
+			// oa[0] = xor_block(oa[BPI-1], ctx->L[0]);
+			// ta[0] = xor_block(oa[0], ctp[0]);
+			// oa[1] = xor_block(oa[0], ctx->L[1]);
+			// ta[1] = xor_block(oa[1], ctp[1]);
+			// oa[2] = xor_block(oa[1], ctx->L[0]);
+			// ta[2] = xor_block(oa[2], ctp[2]);
+			// #if BPI == 4
+			// 	oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
+			// 	ta[3] = xor_block(oa[3], ctp[3]);
+			// #elif BPI == 8
+			// 	oa[3] = xor_block(oa[2], ctx->L[2]);
+			// 	ta[3] = xor_block(oa[3], ctp[3]);
+			// 	oa[4] = xor_block(oa[1], ctx->L[2]);
+			// 	ta[4] = xor_block(oa[4], ctp[4]);
+			// 	oa[5] = xor_block(oa[0], ctx->L[2]);
+			// 	ta[5] = xor_block(oa[5], ctp[5]);
+			// 	oa[6] = xor_block(oa[7], ctx->L[2]);
+			// 	ta[6] = xor_block(oa[6], ctp[6]);
+			// 	oa[7] = xor_block(oa[6], getL(ctx, ntz(block_num)));
+			// 	ta[7] = xor_block(oa[7], ctp[7]);
+			// #endif
+			// AES_ecb_decrypt_blks(ta,BPI,&ctx->decrypt_key);
+			// ptp[0] = xor_block(ta[0], oa[0]);
+			// checksum = xor_block(checksum, ptp[0]);
+			// ptp[1] = xor_block(ta[1], oa[1]);
+			// checksum = xor_block(checksum, ptp[1]);
+			// ptp[2] = xor_block(ta[2], oa[2]);
+			// checksum = xor_block(checksum, ptp[2]);
+			// ptp[3] = xor_block(ta[3], oa[3]);
+			// checksum = xor_block(checksum, ptp[3]);
+			// #if (BPI == 8)
+			// ptp[4] = xor_block(ta[4], oa[4]);
+			// checksum = xor_block(checksum, ptp[4]);
+			// ptp[5] = xor_block(ta[5], oa[5]);
+			// checksum = xor_block(checksum, ptp[5]);
+			// ptp[6] = xor_block(ta[6], oa[6]);
+			// checksum = xor_block(checksum, ptp[6]);
+			// ptp[7] = xor_block(ta[7], oa[7]);
+			// checksum = xor_block(checksum, ptp[7]);
+			// #endif
+			// ptp += BPI;
+			// ctp += BPI;
 		} while (--i);
     	ctx->offset = offset = oa[BPI-1];
 	    ctx->blocks_processed = block_num;
-		ctx->checksum = checksum;
+		// ctx->checksum = checksum;
     }
 
     if (final) {
-		block ta[BPI+1], oa[BPI];
-
+        
+        block oa[4];
+	    block512 ta[BPI+1], oa512[BPI+1];
         /* Process remaining plaintext and compute its tag contribution    */
-        unsigned remaining = ((unsigned)ct_len) % (BPI*16);
+        unsigned remaining = ((unsigned)ct_len) % (BPI*64);
         k = 0;                      /* How many blocks in ta[] need ECBing */
+        oa[BPI-1] = ctx->offset;
+        __m128i temp128[4];
+		int l = 0;
         if (remaining) {
-			#if (BPI == 8)
-			if (remaining >= 64) {
-				oa[0] = xor_block(offset, ctx->L[0]);
-				ta[0] = xor_block(oa[0], ctp[0]);
-				oa[1] = xor_block(oa[0], ctx->L[1]);
-				ta[1] = xor_block(oa[1], ctp[1]);
-				oa[2] = xor_block(oa[1], ctx->L[0]);
-				ta[2] = xor_block(oa[2], ctp[2]);
-				offset = oa[3] = xor_block(oa[2], ctx->L[2]);
-				ta[3] = xor_block(offset, ctp[3]);
-				remaining -= 64;
-				k = 4;
-			}
-			#endif
-			if (remaining >= 32) {
-				oa[k] = xor_block(offset, ctx->L[0]);
-				ta[k] = xor_block(oa[k], ctp[k]);
-				offset = oa[k+1] = xor_block(oa[k], ctx->L[1]);
-				ta[k+1] = xor_block(offset, ctp[k+1]);
-				remaining -= 32;
+			
+            if (remaining >= 128) {
+                for(int j = k; j<k+2; j++){
+                    oa[0] = xor_block(ctx->offset, ctx->L[0]);
+                    oa[1] = xor_block(oa[0], ctx->L[1]);
+                    oa[2] = xor_block(oa[1], ctx->L[0]);
+                    ctx->offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
+
+                    oa512[j] = _mm512_castsi128_si512( oa[0] );
+                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[1],1);
+                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[2],2);
+                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[3],3);
+			        block_num += 4;
+
+                }
+                ctp += 2;
+				ta[k] = xor_block_512(oa512[k], ctp[k]);
+				ta[k+1] = xor_block_512(oa512[k+1], ctp[k+1]);
+				remaining -= 128;
 				k+=2;
 			}
-			if (remaining >= 16) {
-				// imprimiArreglo(16,(unsigned char *)&ctx->ad_checksum);
-				imprimiArreglo(16,(unsigned char *)&offset);
-				imprimiArreglo(16,(unsigned char *)&ctp[k]);
 
-				offset = oa[k] = xor_block(offset, ctx->L[0]);
-				ta[k] = xor_block(offset, ctp[k]);
-				remaining -= 16;
+            if (remaining >= 64) {
+                ctp += 1;
+
+                oa[0] = xor_block(ctx->offset, ctx->L[0]);
+                oa[1] = xor_block(oa[0], ctx->L[1]);
+                oa[2] = xor_block(oa[1], ctx->L[0]);
+                ctx->offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
+
+                oa512[k] = _mm512_castsi128_si512( oa[0] );
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[3],3);
+                block_num += 4;
+
+				// offset = oa[k] = xor_block(offset, ctx->L[0]);
+				ta[k] = xor_block_512(oa512[k], ctp[k]);
+				remaining -= 64;
 				++k;
+
+			}
+			if (remaining >= 32) {
+               
+                ta[k]=zero_block_512();
+
+                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ctp[k])[l]);
+    	        temp128[l+1] =  _mm_loadu_si128(&((__m128i*)&ctp[k])[l+1]);
+    	        block_num += 2;
+
+                oa[0] = xor_block(ctx->offset, ctx->L[0]);
+				
+                // ta[k] = xor_block(oa[0], temp128[l]);
+                ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
+
+				ctx->offset = oa[1] = xor_block(oa[0], ctx->L[1]);
+
+                ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[1], temp128[l+1]) ,1); 
+                
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
+                oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+				// ta[k+1] = xor_block(ctx->offset, ctp[k+1]);
+                remaining -= 32;
+                l+=2;
+
+
+			}
+			if (remaining >= 16) {
+                block_num += 1;
+                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ctp[k])[l]);
+
+				ctx->offset = oa[0] = xor_block(ctx->offset, ctx->L[0]);
+
+                if(l==0){
+                    ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
+                }
+
+                if(l==2){
+                    ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,2); 
+                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],2);
+                }
+
+				// offset = oa[k] = xor_block(ctx->offset, ctx->L[0]);
+				// ta[k] = xor_block(offset, ctp[k]);
+				remaining -= 16;
+				++l;
 			}
 			if (remaining) {
+                
+                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ctp[k])[l]);
+
 				block pad;
-				offset = xor_block(offset,ctx->Lstar);
-				AES_encrypt((unsigned char *)&offset, tmp.u8, &ctx->encrypt_key);
+				ctx->offset = xor_block(ctx->offset,ctx->Lstar);
+
+				AES_encrypt((unsigned char *)&ctx->offset, tmp.u8, &ctx->encrypt_key);
 				pad = tmp.bl;
-				memcpy(tmp.u8,ctp+k,remaining);
+				memcpy(tmp.u8,(unsigned char *)&temp128[l],remaining);
 				tmp.bl = xor_block(tmp.bl, pad);
+
 				tmp.u8[remaining] = (unsigned char)0x80u;
-				memcpy(ptp+k, tmp.u8, remaining);
-				checksum = xor_block(checksum, tmp.bl);
+
+				// memcpy(ptp128+block_num, tmp.u8, remaining);
+                
+                block512 tmp512 = _mm512_castsi128_si512( tmp.bl );
+				checksum = xor_block_512(checksum, tmp512);
 			}
 		}
-		AES_ecb_decrypt_blks(ta,k,&ctx->decrypt_key);
-		switch (k) {
-			#if (BPI == 8)
-			case 7: ptp[6] = xor_block(ta[6], oa[6]);
-				    checksum = xor_block(checksum, ptp[6]);
-			case 6: ptp[5] = xor_block(ta[5], oa[5]);
-				    checksum = xor_block(checksum, ptp[5]);
-			case 5: ptp[4] = xor_block(ta[4], oa[4]);
-				    checksum = xor_block(checksum, ptp[4]);
-			case 4: ptp[3] = xor_block(ta[3], oa[3]);
-				    checksum = xor_block(checksum, ptp[3]);
-			#endif
-			case 3: ptp[2] = xor_block(ta[2], oa[2]);
-				    checksum = xor_block(checksum, ptp[2]);
-			case 2: ptp[1] = xor_block(ta[1], oa[1]);
-				    checksum = xor_block(checksum, ptp[1]);
-			case 1: ptp[0] = xor_block(ta[0], oa[0]);
-				    checksum = xor_block(checksum, ptp[0]);
-		}
+        if(k==0){
+            k=1;
+        }
+        
+		AES_ecb_decrypt_blks_512(ta,k,&ctx->decrypt_key_512);
+     
+        for(int i=0;i<k;i++){
+            ta[i] = xor_block_512(ta[i], oa512[i]);
+            checksum = xor_block_512(checksum, ta[i]);
+        }
+         
+        for(int i=0;i<k;i++){
+            _mm512_storeu_si512(&((__m512i*)ptp)[i],ta[i]);
+        }
+		memcpy(ptp128+block_num, tmp.u8, remaining);
 
-		/* Calculate expected tag */
-        offset = xor_block(offset, ctx->Ldollar);
-        tmp.bl = xor_block(offset, checksum);
-		AES_encrypt(tmp.u8, tmp.u8, &ctx->encrypt_key);
-		tmp.bl = xor_block(tmp.bl, ctx->ad_checksum); /* Full tag */
+
+        __m128i checksumBlock[4];
+		checksumBlock[0] =  _mm_loadu_si128(&((__m128i*)&checksum)[0]);
+    	checksumBlock[1] =  _mm_loadu_si128(&((__m128i*)&checksum)[1]);
+    	checksumBlock[2] =  _mm_loadu_si128(&((__m128i*)&checksum)[2]);
+    	checksumBlock[3] =  _mm_loadu_si128(&((__m128i*)&checksum)[3]);
+		__m128i checksumFinal  = _mm_setzero_si128();
+		i=0;
+        
+		while( i<block_num and i<4){
+			checksumFinal =  _mm_xor_si128( checksumFinal, checksumBlock[i]);
+			temp_len = temp_len-16;
+			i++;
+		}
+        
+
+        /* Calculate expected tag */
+        ctx->offset = xor_block(ctx->offset, ctx->Ldollar);
+        tmp2.bl = xor_block(ctx->offset, checksumFinal);
+
+
+		AES_encrypt(tmp2.u8, tmp2.u8, &ctx->encrypt_key);
+		tmp2.bl = xor_block(tmp2.bl, ctx->ad_checksum); /* Full tag */
+		
+        
+
+          /* Tag is placed at the correct location
+         */
+        if (tag) {
+			#if (OCB_TAG_LEN == 16)
+            	*(block *)tag = tmp2.bl;
+			#elif (OCB_TAG_LEN > 0)
+	            memcpy((char *)tag, &tmp2.bl, OCB_TAG_LEN);
+			#else
+	            memcpy((char *)tag, &tmp2.bl, ctx->tag_len);
+	        #endif
+        } else {
+			#if (OCB_TAG_LEN > 0)
+	            memcpy((char *)ct + ct_len, &tmp2.bl, OCB_TAG_LEN);
+            	ct_len += OCB_TAG_LEN;
+			#else
+	            memcpy((char *)ct + ct_len, &tmp2.bl, ctx->tag_len);
+            	ct_len += ctx->tag_len;
+	        #endif
+        }
 
 		/* Compare with proposed tag, change ct_len if invalid */
 		if ((OCB_TAG_LEN == 16) && tag) {
-			if (unequal_blocks(tmp.bl, *(block *)tag))
+			if (unequal_blocks(tmp2.bl, *(block *)tag))
 				ct_len = AE_INVALID;
 		} else {
 			#if (OCB_TAG_LEN > 0)
@@ -1152,13 +1531,16 @@ int ae_decrypt(ae_ctx     *ctx,
 				int len = ctx->tag_len;
 			#endif
 			if (tag) {
-				if (constant_time_memcmp(tag,tmp.u8,len) != 0)
+				if (constant_time_memcmp(tag,tmp2.u8,len) != 0)
 					ct_len = AE_INVALID;
 			} else {
-				if (constant_time_memcmp((char *)ct + ct_len,tmp.u8,len) != 0)
+				if (constant_time_memcmp((char *)ct + ct_len,tmp2.u8,len) != 0)
 					ct_len = AE_INVALID;
 			}
 		}
+
+
+        
     }
     return ct_len;
  }
@@ -1166,14 +1548,18 @@ int ae_decrypt(ae_ctx     *ctx,
 
 
 int main()
-{   	ALIGN(16) unsigned char ct[128] = {0,};
-        ALIGN(16) unsigned char pt[16] = {0};
+{   	
         ALIGN(16) unsigned char tag[16];
+        ALIGN(16) unsigned char tag2[16];
         ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
         ALIGN(16) unsigned char nonce[] = "abcdefghijklmnop";
         int j=0;
         
-        int len = 16;
+        int len = 17;
+
+        ALIGN(16) unsigned char ct[128] = {0,};
+        ALIGN(16) unsigned char pt[len] = {0};
+        ALIGN(16) unsigned char pt2[len] = {0};
         unsigned char k2[16] ={ 
         0x2b, 0x7e, 0x15, 0x16, 
         0x28, 0xae, 0xd2, 0xa6, 
@@ -1181,22 +1567,21 @@ int main()
         0x09, 0xcf, 0x4f, 0x3c,
         };
 
-        const unsigned char ad[20] ={ 
+        const unsigned char ad[16] ={ 
         0x2b,0x28,0xab,0x09,
         0x7e,0xae,0xf7,0xcf,
         0x15,0xd2,0x15,0x4f,
         0x16,0xa6,0x88,0x3c,
 
-        0x2b,0x28,0xab,0x09,
+        // 0x2b,0x28,0xab,0x09,
         // 0x7e,0xae,0xf7,0xcf,
         // 0x15,0xd2,0x15,0x4f,
         // 0x16,0xa6,0x88,0x3c,
         
     };
-    unsigned long long adlen = 0;
+    unsigned long long adlen = 16;
         for(j=0;j<len; j++){
             pt[j]=j;
-            nonce[j]=j;
         }
         for(j=0;j<16; j++){
             nonce[j]=j;
@@ -1227,7 +1612,16 @@ int main()
         printf("tag          ");
         imprimiArreglo(16,tag);
         printf("\n---------------------------\n");
-        
+
+
+        ae_decrypt(ctx, nonce, ct, len, ad, adlen, pt2, tag2, 1);
+
+        printf("Plaintext   ");
+        imprimiArreglo(len,pt2);
+        printf("\n---------------------------\n");
+        printf("tag          ");
+        imprimiArreglo(16,tag2);
+        printf("\n---------------------------\n");
     return 0;
 }
 
