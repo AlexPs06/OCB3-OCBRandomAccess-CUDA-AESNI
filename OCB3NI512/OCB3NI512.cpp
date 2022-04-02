@@ -803,8 +803,8 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 			}
 			ctx->ad_checksum = checksumFinal;
 
-			imprimiArreglo(16,(unsigned char * )&checksumFinal);
-            exit(1);
+			// imprimiArreglo(16,(unsigned char * )&checksumFinal);
+            // exit(1);
 			
 		
 	}
