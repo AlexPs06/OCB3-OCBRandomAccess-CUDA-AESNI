@@ -90,6 +90,9 @@ unsigned char multiplicacionENGF2(int caso , unsigned short numero2);
 static inline block double_block(block bl);
 static inline block swap_if_le(block bl);
 static inline unsigned ntz(unsigned x);
+void print_hex_string(unsigned char* buf, int len);
+void copyAESBlockToMessage(aesBlock* encrypt, int numBlocks, unsigned int * m2);
+
 ae_ctx* ae_allocate(void *misc)
 {
 	void *p;
@@ -126,8 +129,25 @@ int ae_init(ae_ctx *ctx, const unsigned char *k, int key_len, int nonce_len, int
 
     /* Compute key-dependent values */
     aesBlock *tmp_aes_block = new aesBlock[1];
-    AES128Encrypt(tmp_aes_block, 16, &ctx->encrypt_key.keys[0][0]);
     
+    // tmp_aes_block[0].block[0] = 0x6222209b; 
+    // tmp_aes_block[0].block[1] = 0xf6d19602; 
+    // tmp_aes_block[0].block[2] = 0x5187b2f8; 
+    // tmp_aes_block[0].block[3] = 0x85b3c5e9; 
+    
+    // imprimiArreglo(16,(unsigned char *)&tmp_aes_block[0].block);
+
+    // AES128Encrypt(tmp_aes_block, 16, &ctx->encrypt_key.keys[0][0]);
+    
+    // imprimiArreglo(16,(unsigned char *)&tmp_aes_block[0].block);
+    // exit(1);
+    
+    tmp_aes_block[0].block[0] = 0x0; 
+    tmp_aes_block[0].block[1] = 0x0; 
+    tmp_aes_block[0].block[2] = 0x0; 
+    tmp_aes_block[0].block[3] = 0x0; 
+    AES128Encrypt(tmp_aes_block, 16, &ctx->encrypt_key.keys[0][0]);
+
     ctx->Lstar =  _mm_set_epi32 (
         tmp_aes_block[0].block[3],
         tmp_aes_block[0].block[2],
@@ -154,7 +174,23 @@ int ae_init(ae_ctx *ctx, const unsigned char *k, int key_len, int nonce_len, int
 
     return 1; //AE_SUCCESS;
 }
+void print_hex_string(unsigned char* buf, int len)
+{
+    int i;
 
+    if (len==0) { printf("<empty string>"); return; }
+    if (len>=40) {
+        for (i = 0; i < 10; i++)
+             printf("%02x", *((unsigned char *)buf + i));
+        printf(" ... ");
+        for (i = len-10; i < len; i++)
+             printf("%02x", *((unsigned char *)buf + i));
+        printf(" [%d bytes]", len);
+        return;
+    }
+    for (i = 0; i < len; i++)
+        printf("%02x", *((unsigned char *)buf + i));
+}
 void imprimiArreglo(int tam, unsigned int *keys ){
     for (int i = 0; i<tam; i++){
         printf("%08x", keys[i] );
@@ -792,7 +828,7 @@ __device__ void AES_init( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3
         T4[i] = T4Temp[i];
     }
 }
-__device__ void AES_init_decrypt( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3, int *T4){
+__device__ int AES_init_decrypt( unsigned char  *matrizCajaS, int *T1, int *T2, int *T3, int *T4){
     unsigned char matrizCajaSTemp[256]={
         0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
         0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
@@ -1091,17 +1127,28 @@ __device__ void AES_init_decrypt( unsigned char  *matrizCajaS, int *T1, int *T2,
         T3[i] = T3Temp[i];
         T4[i] = T4Temp[i];
     }
+    return 1;
 }
 __device__ void AES_128(aesBlock *m, unsigned long long mlen, unsigned int *keys, int index){
-    __shared__ unsigned char matrizCajaS[256];
-    __shared__ int T1[256]; 
-    __shared__ int T2[256]; 
-    __shared__ int T3[256]; 
-    __shared__ int T4[256];
-        if(threadIdx.x == 0 || index==0 ){ //le damos chance de que cada instancia logre inicializar cada valor minimo una vez
-            AES_init(matrizCajaS, T1, T2, T3, T4);
-        }
+    // __shared__ unsigned char matrizCajaS[256];
+    // __shared__ int T1[256]; 
+    // __shared__ int T2[256]; 
+    // __shared__ int T3[256]; 
+    // __shared__ int T4[256];
+
+        unsigned char matrizCajaS[256];
+        int T1[256]; 
+        int T2[256]; 
+        int T3[256]; 
+        int T4[256];
+
+        // if(threadIdx.x == 0 || index==0 ){ //le damos chance de que cada instancia logre inicializar cada valor minimo una vez
+        //     AES_init(matrizCajaS, T1, T2, T3, T4);
+        // }
+        AES_init(matrizCajaS, T1, T2, T3, T4);
+
         
+
         int shifttab[16]= {
             0, 5, 10, 15,   
             4,  9,  14,  3,  
@@ -1109,43 +1156,45 @@ __device__ void AES_128(aesBlock *m, unsigned long long mlen, unsigned int *keys
             12,  1,  6,  11, 
         };
         
-        // __syncthreads(); preguntar porque esto hace que nada salga
-        unsigned int block[4];
+        // __syncthreads(); //preguntar porque esto hace que nada salga
+        // unsigned int block[4];
 
-        for (int i = 0 ; i< 4 ; i++){
-            block[i]= m[index].block[i];
-        }
-        addRoundKey( block, keys,0);
+        
+        addRoundKey( (unsigned int*)&m[index].block, keys,0);
         for (int j = 1; j < 10; j++){
             // subBytes(block, matrizCajaS);
-            shiftRows(block, shifttab);
+            shiftRows((unsigned int*)&m[index].block, shifttab);
             
             //mixColumns(block);
-            subBytesMixColumns(block,  T1,  T2,  T3,  T4);
+            subBytesMixColumns((unsigned int*)&m[index].block,  T1,  T2,  T3,  T4);
             
             //añadimos llave de ronda
-            addRoundKey( block, keys,j); // 
+            addRoundKey( (unsigned int*)&m[index].block, keys,j); // 
         }
 
-        subBytes(block, matrizCajaS);
+        subBytes((unsigned int*)&m[index].block, matrizCajaS);
 
-        shiftRows(block, shifttab);
+        shiftRows((unsigned int*)&m[index].block, shifttab);
 
-        addRoundKey( block, keys,10);
-        for (int i = 0 ; i< 4 ; i++){
-            m[index].block[i]= block[i];
-        }
+        addRoundKey( (unsigned int*)&m[index].block, keys,10);
+        
 }
 
 __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys, int index ){
-    __shared__ unsigned char matrizCajaS[256];
-    __shared__ int T1[256]; 
-    __shared__ int T2[256]; 
-    __shared__ int T3[256]; 
-    __shared__ int T4[256];
-        if(threadIdx.x == 0 || index==0 ){
+    // __shared__ unsigned char matrizCajaS[256];
+    // __shared__ int T1[256]; 
+    // __shared__ int T2[256]; 
+    // __shared__ int T3[256]; 
+    // __shared__ int T4[256];
+
+    unsigned char matrizCajaS[256];
+    int T1[256]; 
+    int T2[256]; 
+    int T3[256]; 
+    int T4[256];
+        // if(threadIdx.x == 0 || index==0 ){
             AES_init_decrypt(matrizCajaS, T1, T2, T3, T4);
-        }
+        // }
         
             int shifttab[16]= {
                 0, 13,  10,  7,   
@@ -1154,7 +1203,7 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned in
                 12,  9,   6,  3, 
             };
         
-        __syncthreads();
+        // __syncthreads();
         unsigned int block[4];
 
         for (int i = 0 ; i< 4 ; i++){
@@ -1224,12 +1273,12 @@ void AES128Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys){
 __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *S,  unsigned long long mlen,unsigned long long mlenReal, unsigned long long deltalen, unsigned int *keys){
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if( index<mlen){
-        __syncthreads();
+        // __syncthreads();
         if(index == (mlen - 2)){
             if(mlenReal%16==0){
                 
                 XOR_128(m[index].block,delta[index].block);
-
+                
                 AES_128(m, mlen, keys,index);
         
                 XOR_128(m[index].block,delta[index].block);
@@ -1241,7 +1290,7 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
                 aesTemp[0].block[1] = delta[index].block[1];
                 aesTemp[0].block[2] = delta[index].block[2];
                 aesTemp[0].block[3] = delta[index].block[3];
-
+                
                 AES_128( aesTemp, mlen, keys,0);
         
                 XOR_128(m[index].block,aesTemp[0].block);
@@ -1250,8 +1299,10 @@ __global__ void OCB128EncryptRandomAcces(aesBlock *m,aesBlock *delta, aesBlock *
         }
         else{
 
-
             XOR_128(m[index].block,delta[index].block);
+            // if(index == mlen-1){
+            //     imprimiArregloCuda(16,(unsigned char *)&m[index].block);
+            // }
             
             AES_128(m, mlen, keys,index);
             
@@ -1284,10 +1335,14 @@ __global__ void OCB128EncryptRandomAccesAsociatedData(aesBlock *ad,aesBlock *del
                 XOR2_128(ad[index].block, delta[index].block,tmp.u32 );
                 AES_128(ad, ad_len, keys,index);
             }else{
+                // imprimiArregloCuda(16, (unsigned char *)&ad[index].block );
+                // imprimiArregloCuda(16, (unsigned char *)&delta[index].block );
                 XOR_128(ad[index].block,delta[index].block);
                 AES_128(ad, ad_len, keys,index);
             }
         }else{
+
+            // imprimiArregloCuda(16, (unsigned char *)&ad[index].block );
             XOR_128(ad[index].block,delta[index].block);
             AES_128(ad, ad_len, keys,index);
         }
@@ -1457,50 +1512,39 @@ static inline unsigned ntz(unsigned x) {
 }
 
 
-void getDelta(ae_ctx *ctx, block offset_temp,  aesBlock* delta, unsigned long long pt_len, int final){
+int getDelta(ae_ctx *ctx, block offset_temp,  aesBlock* delta, unsigned long long pt_len, int final){
     
     block offset; 
     offset = offset_temp;
     unsigned i,k;
-    int BPI=8;
+    int BPI=4;
     i = pt_len/(BPI*16);
     int j = 0;
 
-
+    // imprimiArreglo(16,(unsigned char * )&ctx->L[0]);
     if (i) {
 
     	block oa[BPI];
     	oa[BPI-1] = offset;
-        unsigned block_num;
+        unsigned block_num=0;
 		do {
             block_num += BPI;
 			oa[0] = xor_block(oa[BPI-1], ctx->L[0]);
 			oa[1] = xor_block(oa[0], ctx->L[1]);
 			oa[2] = xor_block(oa[1], ctx->L[0]);
-			#if BPI == 4
-				oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
-			#elif BPI == 8
-				oa[3] = xor_block(oa[2], ctx->L[2]);
-				oa[4] = xor_block(oa[1], ctx->L[2]);
-				oa[5] = xor_block(oa[0], ctx->L[2]);
-				oa[6] = xor_block(oa[7], ctx->L[2]);
-				oa[7] = xor_block(oa[6], getL(ctx, ntz(block_num)));
-			#endif
+			oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
+			
 
-            _mm_store_si128 ((__m128i*)delta[BPI*j].block, oa[0]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 1].block, oa[1]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 2].block, oa[2]);
-            #if BPI == 4
-                _mm_store_si128 ((__m128i*)delta[BPI*j+ 3].block, oa[3]);
-            #elif BPI == 8
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 3].block, oa[3]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 4].block, oa[4]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 5].block, oa[5]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 6].block, oa[6]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 7].block, oa[7]);
-            #endif
-            j++;
+            _mm_store_si128 ((__m128i*)delta[j].block, oa[0]);
+            _mm_store_si128 ((__m128i*)delta[j+ 1].block, oa[1]);
+            _mm_store_si128 ((__m128i*)delta[j+ 2].block, oa[2]);
+            _mm_store_si128 ((__m128i*)delta[j+ 3].block, oa[3]);
+            
+            
+            
+            j+=BPI;
 		} while (--i);
+        offset=oa[BPI-1] ;
     }
 
     if (final) {
@@ -1537,29 +1581,35 @@ void getDelta(ae_ctx *ctx, block offset_temp,  aesBlock* delta, unsigned long lo
 				++k;
 			}
             
-            _mm_store_si128 ((__m128i*)delta[BPI*j].block, oa[0]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 1].block, oa[1]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 2].block, oa[2]);
-            #if BPI == 4
-                _mm_store_si128 ((__m128i*)delta[BPI*j+ 3].block, oa[3]);
-            #elif BPI == 8
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 3].block, oa[3]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 4].block, oa[4]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 5].block, oa[5]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 6].block, oa[6]);
-            _mm_store_si128 ((__m128i*)delta[BPI*j+ 7].block, oa[7]);
-            #endif
+            _mm_store_si128 ((__m128i*)delta[j].block, oa[0]);
+            _mm_store_si128 ((__m128i*)delta[j+ 1].block, oa[1]);
+            _mm_store_si128 ((__m128i*)delta[j+ 2].block, oa[2]);
+            _mm_store_si128 ((__m128i*)delta[j+ 3].block, oa[3]);
+           
 		}
         offset = xor_block(offset, ctx->Ldollar);      /* Part of tag gen */
 
-        _mm_store_si128 ((__m128i*)delta[BPI*j + k].block, offset);
+        _mm_store_si128 ((__m128i*)delta[j + k].block, offset);
+
+        // for( int l=0; l<BPI;l++){
+        //     imprimiArreglo(16,(unsigned char *)&delta[l].block );
+        // }
+        // printf("\n-------------------------------------\n");
     }
+    return 1;
 }
 
 void copyMessageToAESBlock(aesBlock* encrypt, int numBlocks, unsigned int * m2){
     for(int i = 0; i<numBlocks; i++){
         for (int j = 0; j<4;j++){
             encrypt[i].block[j]=  m2[(i*4)+j];
+        }
+    }
+}
+void copyAESBlockToMessage(aesBlock* encrypt, int numBlocks, unsigned int * m2){
+    for(int i = 0; i<numBlocks; i++){
+        for (int j = 0; j<4;j++){
+            m2[(i*4)+j]=encrypt[i].block[j];
         }
     }
 }
@@ -1637,7 +1687,7 @@ void checksum (aesBlock *in, unsigned long long tam, unsigned long long message_
     }
 }
 
-static void process_ad(ae_ctx *ctx, aesBlock *S,const unsigned char *ad, int ad_len, int final){
+static void process_ad(ae_ctx *ctx, aesBlock *S, aesBlock *delta_ad ,unsigned char *ad, int ad_len, int final){
     
     int ad_len_temp = ad_len/16;
     int delta_len = ad_len/16;
@@ -1645,22 +1695,31 @@ static void process_ad(ae_ctx *ctx, aesBlock *S,const unsigned char *ad, int ad_
         delta_len++;
         ad_len_temp++;
     }
-    
-    aesBlock *delta_ad = new aesBlock[delta_len];
+   
+    // aesBlock *delta_ad = new aesBlock[delta_len];
     aesBlock *message_ad = new aesBlock[delta_len];
     copyMessageToAESBlock(message_ad, ad_len_temp, (unsigned int *)&ad[0]);
-    getDelta(ctx,ctx->ad_offset, delta_ad, ad_len, 1);
+    // getDelta(ctx,ctx->ad_offset, delta_ad, ad_len, 1);
+    // for(int i=0;i<ad_len_temp;i++){
+    //     imprimiArreglo(16,(unsigned char *)& delta_ad[i].block );
+
+    // }
+    // printf("\n-------------------------------------\n");
+
+    // imprimiArreglo(16,(unsigned char *)& S[0].block );
+    
     OCBRandomAccessAsociatedData(message_ad, delta_ad, ad_len_temp, ad_len, &ctx->encrypt_key.keys[0][0]);
     
     checksum (message_ad, ad_len_temp, 16-(ad_len%16)+ (ad_len), S[0].block );
-
+    
+    // imprimiArreglo(16,(unsigned char *)& S[0].block );
 }
 
 
 int crypto_aead_encrypt(
 	unsigned char *c, unsigned long long *clen,
-	const unsigned char *m, unsigned long long mlen,
-	const unsigned char *ad, unsigned long long ad_len,
+	unsigned char *m, unsigned long long mlen,
+	unsigned char *ad, unsigned long long ad_len,
 	const unsigned char *nsec,
 	const unsigned char *npub,
 	const unsigned char *k)
@@ -1672,37 +1731,58 @@ int crypto_aead_encrypt(
         delta_len++;
         message_len++;
     }
-    
+    int ad_len_temp = ad_len/16;
+    if(ad_len%16!=0){
+        ad_len_temp++;
+    }
 
     ae_ctx* ctx = ae_allocate(NULL);
 
     aesBlock *delta = new aesBlock[delta_len];
     aesBlock *message = new aesBlock[delta_len];
     aesBlock *S = new aesBlock[1];
+    aesBlock *delta_ad = new aesBlock[ad_len_temp];
     ae_init(ctx, k, 16, 12, 16);
     if (nsec) {
         ctx->offset = gen_offset_from_nonce(ctx, nsec);
         ctx->ad_offset = ctx->checksum   = zero_block();
         ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         ctx->ad_checksum = zero_block();
+        
+        getDelta(ctx,ctx->ad_offset, delta_ad, ad_len, 1);
+        getDelta(ctx,ctx->offset, delta, mlen, 1);
+        
+
     }
+
     if (ad_len > 0){
-        process_ad(ctx, S,ad,  ad_len, 1);
+        process_ad(ctx, S, delta_ad,ad,  ad_len, 1);
         
     }
 
-    getDelta(ctx,ctx->offset, delta, mlen, 1);
+
+    // for( int l=0; l<delta_len-1;l++){
+    //     // printf("%i\n",l);
+
+    //     imprimiArreglo(16,(unsigned char *)&delta[l].block );
+    // }
+    // exit(1);
     copyMessageToAESBlock(message, message_len-1, (unsigned int *)&m[0]);
 
     checksum (message, message_len-1, mlen, message[message_len-1].block );
 
     OCBRandomAccess(message, delta, S, message_len, mlen, delta_len, &ctx->encrypt_key.keys[0][0], &ctx->decrypt_key.keys[0][0],1);
 
+    copyAESBlockToMessage(message, message_len, (unsigned int *)&c[0]);
 
     // imprimiArreglo(16,(unsigned char *)&ctx->offset);
    
     cout<<"\n---------------------------Encrypt------------------------------------         \n";
   
+    cout<<"Key          ";
+    printf("\nlen: %i\n",mlen);
+    printf("\n---------------------------");
+    cout<<endl;
 
     cout<<"Key          ";
     imprimiArreglo(16,k);
@@ -1720,22 +1800,15 @@ int crypto_aead_encrypt(
     cout<<endl;
 
     cout<<"Plaintext    ";
-    imprimiArreglo(mlen,m);
+    print_hex_string(m,mlen);
+
     printf("\n---------------------------");
     cout<<endl;
 
     cout<<"Ciphertext   ";
-    for(int i = 0; i<message_len-1; i++){
-        if(i==message_len-2){
-            if(mlen%16!=0)
-                imprimiArreglo(ceil((mlen%16)),(unsigned char *)&message[i].block);
-            else
-                imprimiArreglo((16),(unsigned char *)&message[i].block);
-        }   
-        else{
-            imprimiArreglo((16),(unsigned char *)&message[i].block);
-        }
-    }
+
+    print_hex_string(c,mlen);
+    
     printf("\n---------------------------");
     cout<<endl;
 
@@ -1749,8 +1822,8 @@ int crypto_aead_encrypt(
 
 int crypto_aead_decrypt(
 	unsigned char *c, unsigned long long *clen,
-	const unsigned char *m, unsigned long long mlen,
-	const unsigned char *ad, unsigned long long ad_len,
+	unsigned char *m, unsigned long long mlen,
+	unsigned char *ad, unsigned long long ad_len,
 	const unsigned char *nsec,
 	const unsigned char *npub,
 	const unsigned char *k)
@@ -1761,6 +1834,10 @@ int crypto_aead_decrypt(
         delta_len++;
         message_len++;
     }
+    int ad_len_temp = ad_len/16;
+    if(ad_len%16!=0){
+        ad_len_temp++;
+    }
     
 
     ae_ctx* ctx = ae_allocate(NULL);
@@ -1768,6 +1845,7 @@ int crypto_aead_decrypt(
     aesBlock *delta = new aesBlock[delta_len];
     aesBlock *message = new aesBlock[delta_len];
     aesBlock *S = new aesBlock[1];
+    aesBlock *delta_ad = new aesBlock[ad_len_temp];
     ae_init(ctx, k, 16, 12, 16);
     if (nsec) {
         ctx->offset = gen_offset_from_nonce(ctx, nsec);
@@ -1775,13 +1853,15 @@ int crypto_aead_decrypt(
         ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         	ctx->ad_checksum = zero_block();
     }
+    getDelta(ctx,ctx->ad_offset, delta_ad, ad_len, 1);
+    getDelta(ctx,ctx->offset, delta, mlen, 1);
+
     if (ad_len > 0){
-        process_ad(ctx, S,ad,  ad_len, 1);
+        process_ad(ctx, S, delta_ad, ad,  ad_len, 1);
         
     }
 
 
-    getDelta(ctx,ctx->offset, delta, mlen, 1);
 
     copyMessageToAESBlock(message, message_len-1, (unsigned int *)&m[0]);
 
@@ -1791,7 +1871,7 @@ int crypto_aead_decrypt(
 
     OCBRandomAccessGetTag(&message[message_len-1] ,&delta[message_len-1], S, &ctx->encrypt_key.keys[0][0]);
 
-
+    copyAESBlockToMessage(message, message_len, (unsigned int *)&c[0]);
    
     
     cout<<"\n---------------------------decrypt------------------------------------         \n";
@@ -1812,22 +1892,13 @@ int crypto_aead_decrypt(
     cout<<endl;
 
     cout<<"Ciphertext    ";
-    imprimiArreglo(mlen,m);
+    print_hex_string(c,mlen);
+
     printf("\n---------------------------");
     cout<<endl;
 
     cout<<"Plaintext    ";
-    for(int i = 0; i<message_len-1; i++){
-        if(i==message_len-2){
-            if(mlen%16!=0)
-                imprimiArreglo(ceil((mlen%16)),(unsigned char *)&message[i].block);
-            else
-                imprimiArreglo((16),(unsigned char *)&message[i].block);
-        }   
-        else{
-            imprimiArreglo((16),(unsigned char *)&message[i].block);
-        }
-    }
+    print_hex_string(m,mlen);
     printf("\n---------------------------");
     cout<<endl;
 
@@ -1845,45 +1916,33 @@ int main(int argc, char **argv) {
         0xab, 0xf7, 0x15, 0x88,
         0x09, 0xcf, 0x4f, 0x3c,
     };
-    unsigned long long mlen=16;
+    unsigned long long mlen=512;
 
-    const unsigned char m[mlen] ={ 
+    unsigned char m[mlen] ={ 
         0x00,0x01,0x02,0x03, 
         0x04,0x05,0x06,0x07,
         0x08,0x09,0x0a,0x0b,
         0x0c,0x0d,0x0e,0x0f,
         // 0x10,0x11,0x12,0x13
     };
+    unsigned long long adlen = 128;
+     
+    unsigned char ad[adlen];
 
-    const unsigned char m2[mlen] ={ 
-        0x7e, 0x86, 0x67, 0xb6, 
-        0xa5, 0x5c, 0xdb, 0x9f, 
-        0xd2, 0x5f, 0x5a, 0x3e, 
-        0x09, 0x5e, 0xda, 0x34,
-        // 0x23, 0x32, 0x81, 0x46,
-    };
-
-    unsigned char c[16]={
-        0x30, 0x88, 0x6c, 0x7f,   
-        0x32, 0x7f, 0xfe, 0xad, 
-        0xee, 0xdf, 0x75, 0x48,
-        0x6f, 0x09, 0xe7, 0xb6,
+    for(int j=0;j<mlen; j++){
+        m[j]=0;
+    }
+    for(int j=0;j<adlen; j++){
+        ad[j]=j;
+    }
+    unsigned char c[mlen]={0,
+        // 0x30, 0x88, 0x6c, 0x7f,   
+        // 0x32, 0x7f, 0xfe, 0xad, 
+        // 0xee, 0xdf, 0x75, 0x48,
+        // 0x6f, 0x09, 0xe7, 0xb6,
     };
     unsigned long long *clen;
-    unsigned long long adlen = 20;
-     
-    const unsigned char ad[adlen] ={ 
-        0x2b,0x28,0xab,0x09,
-        0x7e,0xae,0xf7,0xcf,
-        0x15,0xd2,0x15,0x4f,
-        0x16,0xa6,0x88,0x3c,
-
-        0x2b,0x28,0xab,0x09,
-        // 0x7e,0xae,0xf7,0xcf,
-        // 0x15,0xd2,0x15,0x4f,
-        // 0x16,0xa6,0x88,0x3c,
-        
-    };
+    
 
     const unsigned char nsec[16] = {
         0x00,0x01,0x02,0x03, 
@@ -1891,18 +1950,14 @@ int main(int argc, char **argv) {
         0x08,0x09,0x0a,0x0b,
         0x0c,0x0d,0x0e,0x0f
     };
-    unsigned char nsec2[16] = {
-        0x00,0x01,0x02,0x03, 
-        0x04,0x05,0x06,0x07,
-        0x08,0x09,0x0a,0x0b,
-        0x0c,0x0d,0x0e,0x0f
-    };
+   
     const unsigned char *npub; 
 
     crypto_aead_encrypt(c, clen, m, mlen, ad, adlen, nsec, npub, k);
-
-    crypto_aead_decrypt(c, clen, m2, mlen, ad, adlen, nsec, npub, k);
+    for(int j=0;j<adlen; j++){
+        ad[j]=j;
+    }
+    crypto_aead_decrypt(m, clen, c, mlen, ad, adlen, nsec, npub, k);
 
     return 0;
 }
-
