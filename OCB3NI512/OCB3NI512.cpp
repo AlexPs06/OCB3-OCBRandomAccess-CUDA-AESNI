@@ -74,18 +74,16 @@
 
 #include "ae.h"
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <iostream>
-#include <memory>
 #include <math.h>  
 #include <wmmintrin.h>
 #include <tmmintrin.h>              /* SSSE3 instructions              */
 #include <xmmintrin.h>              /* SSE instructions and _mm_malloc */
 #include <emmintrin.h>              /* SSE2 instructions               */
 #include <immintrin.h>
-#define ALIGN(n)
 
 #define bswap32(x)                                              \
     ((((x) & 0xff000000u) >> 24) | (((x) & 0x00ff0000u) >>  8) | \
@@ -100,13 +98,6 @@ void imprimiArreglo(int tam, unsigned char *in )
     printf("\n" );
 
 }
-void imprimiArreglo(int tam, unsigned int *keys ){
-    for (int i = 0; i<tam; i++){
-        printf("%08x", keys[i] );
-    }
-    printf("\n");
-}
-
 static inline uint64_t bswap64(uint64_t x) {
     union { uint64_t u64; uint32_t u32[2]; } in, out;
     in.u64 = x;
@@ -156,15 +147,10 @@ static inline block double_block(block bl) {
 }
 
 
-#if (OCB_KEY_LEN == 0)
-	typedef struct { __m128i rd_key[15]; int rounds; } AES_KEY;
-	#define ROUNDS(ctx) ((ctx)->rounds)
-#else
-	typedef struct { __m128i rd_key[7+OCB_KEY_LEN/4]; } AES_KEY;
-	#define ROUNDS(ctx) (6+OCB_KEY_LEN/4)
-    typedef struct { __m512i rd_key[7+OCB_KEY_LEN/4]; } AES_KEY_512;
-	#define ROUNDS(ctx) (6+OCB_KEY_LEN/4)
-#endif
+
+typedef struct { __m128i rd_key[7+OCB_KEY_LEN/4]; } AES_KEY;
+#define ROUNDS(ctx) (6+OCB_KEY_LEN/4)
+typedef struct { __m512i rd_key[7+OCB_KEY_LEN/4]; } AES_KEY_512;
 
 #define EXPAND_ASSIST(v1,v2,v3,v4,shuff_const,aes_const)                    \
     v2 = _mm_aeskeygenassist_si128(v4,aes_const);                           \
@@ -274,16 +260,31 @@ static int AES_set_decrypt_key(const unsigned char *userKey, const int bits, AES
     return 0;
 }
 
-static int AES_cast_128_to_512_key(AES_KEY *key, AES_KEY_512 *key512)
-{
+static AES_KEY_512 AES_cast_128_to_512_key(AES_KEY *key, AES_KEY_512 *key512)
+{   
+
+    AES_KEY_512 temporal;
+    union {block oa128[4]; block512 oa512;} oa;
     for(int i = 0; i< 11; i++ ){
         
-        key512->rd_key[i] = _mm512_castsi128_si512( key->rd_key[i] );
-        key512->rd_key[i] = _mm512_inserti64x2(key512->rd_key[i], key->rd_key[i], 1 );
-        key512->rd_key[i] = _mm512_inserti64x2(key512->rd_key[i], key->rd_key[i], 2 );
-        key512->rd_key[i] = _mm512_inserti64x2(key512->rd_key[i], key->rd_key[i], 3 );
+        
+        oa.oa128[0]=key->rd_key[i];
+        oa.oa128[1]=key->rd_key[i];
+        oa.oa128[2]=key->rd_key[i];
+        oa.oa128[3]=key->rd_key[i];
+        temporal.rd_key[i]=oa.oa512;
+
+        // key512->rd_key[i] =_mm512_loadu_si512(&((__m512i*)oa.oa512)[0] );
+        // key512->rd_key[i] = _mm512_loadu_si512(&oa.oa512);
+        // _mm512_store_si512(&key512->rd_key[i],oa.oa512 );
+        // key512->rd_key[i] = _mm512_castsi128_si512( key->rd_key[i] );
+        // key512->rd_key[i] = _mm512_inserti64x2(key512->rd_key[i], key->rd_key[i], 1 );
+        // key512->rd_key[i] = _mm512_inserti64x2(key512->rd_key[i], key->rd_key[i], 2 );
+        // key512->rd_key[i] = _mm512_inserti64x2(key512->rd_key[i], key->rd_key[i], 3 );
+
     }
-    return 0;
+    // key512->rd_key[0] = temporal[0].rd_key[0];
+    return temporal;
 }
 
 
@@ -327,12 +328,12 @@ static inline void AES_ecb_encrypt_blks(block *blks, unsigned nblks, AES_KEY *ke
 static inline void AES_ecb_encrypt_blks_512(block512 *blks, unsigned nblks, AES_KEY_512 *key) {
     unsigned i,j,rnds=ROUNDS(key);
 	const __m512i *sched = ((__m512i *)(key->rd_key));
-	for (i=0; i<nblks; ++i)
+    for (i=0; i<nblks; ++i)
 	    blks[i] =_mm512_xor_si512(blks[i], sched[0]);
 	for(j=1; j<rnds; ++j)
 	    for (i=0; i<nblks; ++i)
 		    blks[i] = _mm512_aesenc_epi128(blks[i], sched[j]);
-	for (i=0; i<nblks; ++i)
+    for (i=0; i<nblks; ++i)
 	    blks[i] =_mm512_aesenclast_epi128(blks[i], sched[j]);
 }
 static inline void AES_ecb_decrypt_blks_512(block512 *blks, unsigned nblks, AES_KEY_512 *key) {
@@ -358,7 +359,7 @@ static inline void AES_ecb_decrypt_blks(block *blks, unsigned nblks, AES_KEY *ke
 	    blks[i] =_mm_aesdeclast_si128(blks[i], sched[j]);
 }
 
-#define BPI 4  /* Number of blocks in buffer per ECB call   */
+#define BPI 8  /* Number of blocks in buffer per ECB call   */
                /* Set to 4 for Westmere, 8 for Sandy Bridge */
 
 
@@ -478,21 +479,16 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int tag_le
     #endif
     
 	AES_set_encrypt_key((unsigned char *)key, key_len*8, &ctx->encrypt_key);
-    AES_set_decrypt_key((unsigned char *)key, (int)(key_len*8), &ctx->decrypt_key);
-    AES_cast_128_to_512_key(&ctx->encrypt_key, &ctx->encrypt_key_512);
-    AES_cast_128_to_512_key(&ctx->decrypt_key, &ctx->decrypt_key_512);
+    // AES_set_decrypt_key((unsigned char *)key, (int)(key_len*8), &ctx->decrypt_key);
+    AES_set_decrypt_key_fast(&ctx->decrypt_key,&ctx->encrypt_key);
 
+    ctx->encrypt_key_512 = AES_cast_128_to_512_key(&ctx->encrypt_key, &ctx->encrypt_key_512);
+    ctx->decrypt_key_512 = AES_cast_128_to_512_key(&ctx->decrypt_key, &ctx->decrypt_key_512);
+
+    
     /* Zero things that need zeroing */
     ctx->cached_Top = ctx->ad_checksum = zero_block();
     ctx->ad_blocks_processed = 0;
-
-    // unsigned char cosa[16] = {
-    //     0x9b, 0x20, 0x22, 0x62,
-    //     0x02, 0x96, 0xd1, 0xf6,
-    //     0xf8, 0xb2, 0x87, 0x51, 
-    //     0xe9, 0xc5, 0xb3, 0x85,
-    
-    // }
 
     /* Compute key-dependent values */
     AES_encrypt((unsigned char *)&ctx->cached_Top,
@@ -796,7 +792,7 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
     		checksumBlock[3] =  _mm_loadu_si128(&((__m128i*)&ad_checksum)[3]);
 			__m128i checksumFinal  = _mm_setzero_si128();
 			i=0;
-			while(temp_len>0 and i<4){
+			while(temp_len>0 && i<4){
 				checksumFinal =  _mm_xor_si128( checksumFinal, checksumBlock[i]);
 				temp_len = temp_len-16;
 				i++;
@@ -813,7 +809,6 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 /* ----------------------------------------------------------------------- */
 
 
-
 int ae_encrypt(ae_ctx     *  ctx,
                const void *  nonce,
                const void *pt,
@@ -824,20 +819,19 @@ int ae_encrypt(ae_ctx     *  ctx,
                void       *tag,
                int         final)
 {
-    
 	int temp_len = pt_len;
 	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
-    block512 offset, checksum;
+    union {block512  checksum512; block checksum128[4];} checksum;
     unsigned i, k;
-    
 	block       *ptp128 = (block *)pt;
-    unsigned block_num;
-    unsigned indice = 0;
+    unsigned block_num=0;
+    block512       * ctp = (block512 *)ct;
+    const block512 * ptp = (block512 *)pt;
+
 	/* Non-null nonce means start of new message, init per-message values */
     if (nonce) {
         ctx->offset = gen_offset_from_nonce(ctx, nonce);
-		
-        ctx->ad_offset = ctx->checksum   = zero_block();
+        ctx->ad_offset   = zero_block();
         ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         if (ad_len >= 0)
         	ctx->ad_checksum = zero_block();
@@ -847,65 +841,68 @@ int ae_encrypt(ae_ctx     *  ctx,
 	if (ad_len > 0)
 		process_ad(ctx, ad, ad_len, final);
     
-    i=pt_len/64;
-    if(pt_len%64!=0)
-        i++;
-    block512  ctp[i];  //(block512 *)ct;
-    block512  ptp[i]; //(block512 *)pt;
-    for(int j=0; j<i;j++){
-        ptp[j] = _mm512_loadu_si512(&((__m512i*)pt)[j] );
-    }
-    
+   
 	/* Encrypt plaintext data BPI blocks at a time */
     // offset = ctx->offset;
-    offset = _mm512_castsi128_si512( ctx->offset  );
-    checksum  = zero_block_512();
+    // checksum.checksum512  = zero_block_512();
     i = pt_len/(BPI*64);
-    block_num =1; 
 
     if (i) {
-    	block oa[BPI];
-    	block512 oa512[BPI];
-    	oa[BPI-1] = ctx->offset;
+    	union {block oa128[4*BPI]; block512 oa512[BPI];} oa;
+		block512 ta[BPI];
+        printf("%i\n",i);
+
 		do {
-			block512 ta[BPI];
-			
-            for(int j = 0; j<BPI; j++){
-                oa[0] = xor_block(oa[BPI-1], getL(ctx, ntz(block_num)) );
-                block_num ++;
-                oa[1] = xor_block(oa[0], getL(ctx, ntz(block_num)) );
-                block_num ++;
-                oa[2] = xor_block(oa[1], getL(ctx, ntz(block_num)) );
-                block_num ++;
-                oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)) );
-                block_num ++;
+			// block_num=0;
+            // for(int j = 0; j<BPI; j++){
+                // int k=1*4;
+                // block_num +=4;
+			    // oa.oa128[k+0] = xor_block(ctx->offset,    ctx->L[0]);
+			    // oa.oa128[k+1] = xor_block(oa.oa128[k+0], ctx->L[1]);
+                // oa.oa128[k+2] = xor_block(oa.oa128[k+1], ctx->L[0] );
+                // ctx->offset = oa.oa128[k+3] = xor_block(oa.oa128[k+2], getL(ctx, ntz(block_num)));
+                // block_num ++;
+                
+                // block_num +=3;
+			    // oa.oa128[4] = xor_block(ctx->offset, ctx->L[0]);
+			    // oa.oa128[5] = xor_block(oa.oa128[4], ctx->L[1]);
+			    // oa.oa128[6] = xor_block(oa.oa128[5], ctx->L[0]);
+				// ctx->offset = oa.oa128[7] = xor_block(oa.oa128[6], getL(ctx, ntz(block_num)));
+                // block_num ++;
 
-                oa512[j] = _mm512_castsi128_si512( oa[0] );
-                oa512[j] = _mm512_inserti64x2( oa512[j],oa[1],1);
-                oa512[j] = _mm512_inserti64x2( oa512[j],oa[2],2);
-                oa512[j] = _mm512_inserti64x2( oa512[j],oa[3],3);
-			    
+                // block_num +=3;
+			    // oa.oa128[8] = xor_block(ctx->offset, ctx->L[0]);
+			    // oa.oa128[9] = xor_block(oa.oa128[8], ctx->L[1]);
+			    // oa.oa128[10] = xor_block(oa.oa128[9], ctx->L[0]);
+				// ctx->offset = oa.oa128[11] = xor_block(oa.oa128[10], getL(ctx, ntz(block_num)));
+                // block_num ++;
 
-            }
-			ta[0] = xor_block_512(oa512[0], ptp[indice + 0]);
-			checksum = xor_block_512(checksum, ptp[indice + 0]);
-			ta[1] = xor_block_512(oa512[1], ptp[indice + 1]);
-			checksum = xor_block_512(checksum, ptp[indice + 1]);
-			ta[2] = xor_block_512(oa512[2], ptp[indice + 2]);
-			checksum = xor_block_512(checksum, ptp[indice + 2]);
-            ta[3] = xor_block_512(oa512[3], ptp[indice + 3]);
-            checksum = xor_block_512(checksum, ptp[indice + 3]);
+                // block_num +=3;
+			    // oa.oa128[12] = xor_block(ctx->offset, ctx->L[0]);
+			    // oa.oa128[13] = xor_block(oa.oa128[12], ctx->L[1]);
+			    // oa.oa128[14] = xor_block(oa.oa128[13], ctx->L[0]);
+				// ctx->offset = oa.oa128[15] = xor_block(oa.oa128[14], getL(ctx, ntz(block_num)));
+                // block_num ++;
+                
+            // }
+
+            // for(int j = 0; j<BPI; j++){
+			//     ta[j] = xor_block_512(oa.oa512[j], ptp[j]);
+			//     checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[j]);
+
+            // }
 			AES_ecb_encrypt_blks_512(ta,BPI,&ctx->encrypt_key_512);
-
-			_mm512_storeu_si512(&((__m512i*)ct)[indice + 0],xor_block_512(ta[0], oa512[0]));
-			_mm512_storeu_si512(&((__m512i*)ct)[indice +1],xor_block_512(ta[1], oa512[1]));
-			_mm512_storeu_si512(&((__m512i*)ct)[indice +2],xor_block_512(ta[2], oa512[2]));
-			_mm512_storeu_si512(&((__m512i*)ct)[indice +3],xor_block_512(ta[3], oa512[3]));
-			indice += BPI;
+            // for(int j = 0; j<BPI; j++){
+            //     ctp[j] = xor_block_512(ta[j], oa.oa512[j]);
+            // }
+			
+            ptp += BPI;
+			ctp += BPI;
 			
 		} while (--i);
-    	ctx->offset = oa[BPI-1];
+    	// ctx->offset = oa.oa128[4*BPI-1];
     }
+    return 0;
 
     if (final) {
 		block oa[4];
@@ -916,149 +913,148 @@ int ae_encrypt(ae_ctx     *  ctx,
         oa[BPI-1] = ctx->offset;
         block temp128[4];
         unsigned l=0;
-        if (remaining) {
+        // if (remaining) {
 			
-			if (remaining >= 128) {
-                for(int j = k; j<k+2; j++){
-                    oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)));
-                    block_num ++;
-                    oa[1] = xor_block(oa[0], getL(ctx, ntz(block_num)));
-                    block_num ++;
-                    oa[2] = xor_block(oa[1], getL(ctx, ntz(block_num)));
-                    block_num ++;
-                    ctx->offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
-                    block_num ++;
+		// 	if (remaining >= 128) {
+        //         for(int j = k; j<k+2; j++){
+        //             oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)));
+        //             block_num ++;
+        //             oa[1] = xor_block(oa[0], getL(ctx, ntz(block_num)));
+        //             block_num ++;
+        //             oa[2] = xor_block(oa[1], getL(ctx, ntz(block_num)));
+        //             block_num ++;
+        //             ctx->offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
+        //             block_num ++;
 
-                    oa512[j] = _mm512_castsi128_si512( oa[0] );
-                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[1],1);
-                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[2],2);
-                    oa512[j] = _mm512_inserti64x2( oa512[j],oa[3],3);
+        //             oa512[j] = _mm512_castsi128_si512( oa[0] );
+        //             oa512[j] = _mm512_inserti64x2( oa512[j],oa[1],1);
+        //             oa512[j] = _mm512_inserti64x2( oa512[j],oa[2],2);
+        //             oa512[j] = _mm512_inserti64x2( oa512[j],oa[3],3);
 
-                }
-				ta[k] = xor_block_512(oa512[k], ptp[indice + k]);
-				checksum = xor_block_512(checksum, ptp[indice +k]);
-				ta[k+1] = xor_block_512(oa512[k+1], ptp[indice +k+1]);
-				checksum = xor_block_512(checksum, ptp[indice + k+1]);
-				remaining -= 128;
-				k+=2;
-			}
-			if (remaining >= 64) {
-                oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)));
-                block_num ++;
-                oa[1] = xor_block(oa[0], getL(ctx, ntz(block_num)));
-                block_num ++;
-                oa[2] = xor_block(oa[1], getL(ctx, ntz(block_num)));
-                block_num ++;
-                ctx->offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
-                block_num ++;
+        //         }
+		// 		ta[k] = xor_block_512(oa512[k], ptp[indice + k]);
+		// 		checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[indice +k]);
+		// 		ta[k+1] = xor_block_512(oa512[k+1], ptp[indice +k+1]);
+		// 		checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[indice + k+1]);
+		// 		remaining -= 128;
+		// 		k+=2;
+		// 	}
+		// 	if (remaining >= 64) {
+        //         oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)));
+        //         block_num ++;
+        //         oa[1] = xor_block(oa[0], getL(ctx, ntz(block_num)));
+        //         block_num ++;
+        //         oa[2] = xor_block(oa[1], getL(ctx, ntz(block_num)));
+        //         block_num ++;
+        //         ctx->offset  = oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
+        //         block_num ++;
 
-                oa512[k] = _mm512_castsi128_si512( oa[0] );
-                oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
-                oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
-                oa512[k] = _mm512_inserti64x2( oa512[k],oa[3],3);
+        //         oa512[k] = _mm512_castsi128_si512( oa[0] );
+        //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+        //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[2],2);
+        //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[3],3);
                 
 
-				// offset = oa[k] = xor_block(offset, ctx->L[0]);
-				ta[k] = xor_block_512(oa512[k], ptp[indice +k]);
-				checksum = xor_block_512(checksum, ptp[indice +k]);
-				remaining -= 64;
-				++k;
+		// 		// offset = oa[k] = xor_block(offset, ctx->L[0]);
+		// 		ta[k] = xor_block_512(oa512[k], ptp[indice +k]);
+		// 		checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[indice +k]);
+		// 		remaining -= 64;
+		// 		++k;
 
-			}
+		// 	}
 
-            if (remaining >= 32) {
-                ta[k]=zero_block_512();
-                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l]);
-    	        temp128[l+1] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l+1]);
+        //     if (remaining >= 32) {
+        //         ta[k]=zero_block_512();
+        //         temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l]);
+    	//         temp128[l+1] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l+1]);
 
-                block512 tmp512 = _mm512_castsi128_si512( temp128[l] );
-				checksum = xor_block_512(checksum, tmp512);
+        //         block512 tmp512 = _mm512_castsi128_si512( temp128[l] );
+		// 		checksum.checksum512 = xor_block_512(checksum.checksum512, tmp512);
                 
-                tmp512 = _mm512_castsi128_si512( temp128[l+1] );
-				checksum = xor_block_512(checksum, tmp512);
+        //         tmp512 = _mm512_castsi128_si512( temp128[l+1] );
+		// 		checksum.checksum512 = xor_block_512(checksum.checksum512, tmp512);
 
-                oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)) );
-                block_num ++;
-                ctx->offset = oa[1] = xor_block(oa[0], getL(ctx, ntz(block_num)) );
-                block_num ++;
+        //         oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)) );
+        //         block_num ++;
+        //         ctx->offset = oa[1] = xor_block(oa[0], getL(ctx, ntz(block_num)) );
+        //         block_num ++;
 
-                ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
-                ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[1], temp128[l+1]) ,1); 
-                oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
-                oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
+        //         ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
+        //         ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[1], temp128[l+1]) ,1); 
+        //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
+        //         oa512[k] = _mm512_inserti64x2( oa512[k],oa[1],1);
 				
-                remaining -= 32;
-                l+=2;
-			}
-			if (remaining >= 16) {
+        //         remaining -= 32;
+        //         l+=2;
+		// 	}
+		// 	if (remaining >= 16) {
                 
-                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l]);
+        //         temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l]);
 
-                block512 tmp512 = _mm512_castsi128_si512( temp128[l] );
-				checksum = xor_block_512(checksum, tmp512);
-				ctx->offset = oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)) );
-                if(l==0){
-                    ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
-                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
-                }
+        //         block512 tmp512 = _mm512_castsi128_si512( temp128[l] );
+		// 		checksum.checksum512 = xor_block_512(checksum.checksum512, tmp512);
+		// 		ctx->offset = oa[0] = xor_block(ctx->offset, getL(ctx, ntz(block_num)) );
+        //         if(l==0){
+        //             ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,0); 
+        //             oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],0);
+        //         }
 
-                if(l==2){
-                    ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,2); 
-                    oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],2);
-                }
-                block_num += 1;
-				remaining -= 16;
-				++l;
-			}
-			if (remaining) {
+        //         if(l==2){
+        //             ta[k] = _mm512_inserti64x2( ta[k], xor_block(oa[0], temp128[l]) ,2); 
+        //             oa512[k] = _mm512_inserti64x2( oa512[k],oa[0],2);
+        //         }
+        //         block_num += 1;
+		// 		remaining -= 16;
+		// 		++l;
+		// 	}
+		// 	if (remaining) {
                 
-                temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l]);
+        //         temp128[l] =  _mm_loadu_si128(&((__m128i*)&ptp[indice +k])[l]);
 
 
-                tmp.bl = zero_block();
-				memcpy(tmp.u8,  ptp128+block_num-1, remaining);
-				tmp.u8[remaining] = (unsigned char)0x80u;
+        //         tmp.bl = zero_block();
+		// 		memcpy(tmp.u8,  ptp128+block_num-1, remaining);
+		// 		tmp.u8[remaining] = (unsigned char)0x80u;
 
-                block512 tmp512 = _mm512_castsi128_si512( tmp.bl );
-				checksum = xor_block_512(checksum, tmp512);
+        //         block512 tmp512 = _mm512_castsi128_si512( tmp.bl );
+		// 		checksum.checksum512 = xor_block_512(checksum.checksum512, tmp512);
                 
                 
-				oa[0] = ctx->offset = xor_block(ctx->offset,ctx->Lstar);
-                if(l==0){
-                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,0); 
-                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,0);
-                }
-                if(l==1){
-                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,1); 
-                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,1);
-                }
-                if(l==2){
-                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,2); 
-                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,2);
-                }
-                if(l==3){
-                    ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,3); 
-                    oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,3);
-                }
-			}
-            k++;
+		// 		oa[0] = ctx->offset = xor_block(ctx->offset,ctx->Lstar);
+        //         if(l==0){
+        //             ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,0); 
+        //             oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,0);
+        //         }
+        //         if(l==1){
+        //             ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,1); 
+        //             oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,1);
+        //         }
+        //         if(l==2){
+        //             ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,2); 
+        //             oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,2);
+        //         }
+        //         if(l==3){
+        //             ta[k] = _mm512_inserti64x2( ta[k], oa[0] ,3); 
+        //             oa512[k] = _mm512_inserti64x2( oa512[k],tmp.bl,3);
+        //         }
+		// 	}
+        //     k++;
             
-		}
+		// }
         
         // imprimiArreglo(64,(unsigned char * )& oa512[0]);
       
 
 		AES_ecb_encrypt_blks_512(ta,k,&ctx->encrypt_key_512);
 
-		__m128i checksumBlock[4];
-		checksumBlock[0] =  _mm_loadu_si128(&((__m128i*)&checksum)[0]);
-    	checksumBlock[1] =  _mm_loadu_si128(&((__m128i*)&checksum)[1]);
-    	checksumBlock[2] =  _mm_loadu_si128(&((__m128i*)&checksum)[2]);
-    	checksumBlock[3] =  _mm_loadu_si128(&((__m128i*)&checksum)[3]);
+		// checksumBlock[0] =  _mm_loadu_si128(&((__m128i*)&checksum)[0]);
+    	// checksumBlock[1] =  _mm_loadu_si128(&((__m128i*)&checksum)[1]);
+    	// checksumBlock[2] =  _mm_loadu_si128(&((__m128i*)&checksum)[2]);
+    	// checksumBlock[3] =  _mm_loadu_si128(&((__m128i*)&checksum)[3]);
 		__m128i checksumFinal  = _mm_setzero_si128();
 		i=0;
-		while(temp_len>0 and i<4){
-			checksumFinal =  _mm_xor_si128( checksumFinal, checksumBlock[i]);
+		while(temp_len>0 && i<4){
+			checksumFinal =  _mm_xor_si128( checksumFinal, checksum.checksum128[i]);
 			temp_len = temp_len-16;
 			i++;
 		}
@@ -1067,7 +1063,7 @@ int ae_encrypt(ae_ctx     *  ctx,
         
         checksumFinal = xor_block(ctx->offset, checksumFinal);           /* Part of tag gen */
 		
-        // imprimiArreglo(16,(unsigned char * )& checksumFinal);
+        
         
         AES_ecb_encrypt_blks(&checksumFinal,1,&ctx->encrypt_key);
 
@@ -1077,9 +1073,9 @@ int ae_encrypt(ae_ctx     *  ctx,
         for(int j = 0; j<k; j++){
             ta[j] = xor_block_512(ta[j], oa512[j]);
         }
-		for(int j = 0; j<k; j++){
-			_mm512_storeu_si512(&((__m512i*)ct)[indice+j],ta[j]  );
-        }
+		// for(int j = 0; j<k; j++){
+		// 	_mm512_storeu_si512(&((__m512i*)ct)[indice+j],ta[j]  );
+        // }
 
         /* Tag is placed at the correct location
          */
@@ -1101,6 +1097,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 	        #endif
         }
     }
+    
     return (int) pt_len;
 }
 
@@ -1407,7 +1404,7 @@ int ae_decrypt(ae_ctx     *ctx,
 		__m128i checksumFinal  = _mm_setzero_si128();
 		i=0;
         
-		while( temp_len>0 and i<4){
+		while( temp_len>0 && i<4){
 			checksumFinal =  _mm_xor_si128( checksumFinal, checksumBlock[i]);
 
 			temp_len = temp_len-16;
@@ -1492,33 +1489,100 @@ void print_hex_string(unsigned char* buf, int len)
         printf("%02x", *((unsigned char *)buf + i));
 }
 
-int main()
+
+#define M 15
+#define N 64
+
+#if __GNUC__
+#define ALIGN(n)      __attribute__ ((aligned(n))) 
+#elif _MSC_VER
+#define ALIGN(n)      __declspec(align(n))
+#else
+#define ALIGN(n)
+#endif
+
+#if __INTEL_COMPILER
+  #define STAMP ((unsigned)__rdtsc())
+#elif (__GNUC__ && (__x86_64__ || __amd64__ || __i386__))
+  #define STAMP ({unsigned res; __asm__ __volatile__ ("rdtsc" : "=a"(res) : : "edx"); res;})
+#elif (_M_IX86)
+  #include <intrin.h>
+  #pragma intrinsic(__rdtsc)
+  #define STAMP ((unsigned)__rdtsc())
+#else
+  #error -- Architechture not supported!
+#endif
+
+#define DO(x) do { \
+int i; \
+for (i = 0; i < M; i++) { \
+unsigned c2, c1;\
+x;x;\
+c1 = STAMP;\
+for (j = 0; j <= N; j++) { x; }\
+c1 = STAMP - c1;\
+x;x;\
+c2 = STAMP;\
+x;\
+c2 = STAMP - c2;\
+median_next(c1-c2);\
+} } while (0)
+
+unsigned values[M];
+int num_values = 0;
+
+extern char infoString[];  /* Each AE implementation must have a global one */
+
+#ifndef MAX_ITER
+#define MAX_ITER 393216
+#endif
+
+int comp(const void *x, const void *y) { return *(unsigned *)x - *(unsigned *)y; }
+void median_next(unsigned x) { values[num_values++] = x; }
+unsigned median_get(void) {
+    unsigned res;
+    /*for (res = 0; res < num_values; res++)
+    //   printf("%d ", values[res]);
+    //printf("\n");*/
+    qsort(values, num_values, sizeof(unsigned), comp);
+    res = values[num_values/2];
+    num_values = 0;
+    return res;
+}
+void median_print(void) {
+    int res;
+    qsort(values, num_values, sizeof(unsigned), comp);
+    for (res = 0; res < num_values; res++)
+       printf("%d ", values[res]);
+    printf("\n");
+}
+int main(int argc, char **argv)
 {   	
         ALIGN(16) unsigned char tag[16];
         ALIGN(16) unsigned char tag2[16];
         ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
         ALIGN(16) unsigned char nonce[] = "abcdefghijklmnop";
-        int j=0;
-        
-        int len = 1000;
+        int i, j, len;
 
-        ALIGN(16) unsigned char ct[len+256] = {0,};
-        ALIGN(16) unsigned char pt[len] = {0};
-        ALIGN(16) unsigned char pt2[len+256] = {0};
+        
+        len = MAX_ITER;
+
+        ALIGN(64) unsigned char ct[MAX_ITER];
+        ALIGN(64) unsigned char pt[MAX_ITER];
+        ALIGN(64) unsigned char pt2[len+256];
         unsigned char k2[16] ={ 
         0x2b, 0x7e, 0x15, 0x16, 
         0x28, 0xae, 0xd2, 0xa6, 
         0xab, 0xf7, 0x15, 0x88,
         0x09, 0xcf, 0x4f, 0x3c,
         };
-        unsigned long long adlen = 256;
+        unsigned long long adlen = 0;
 
-        unsigned char ad[adlen] ={ 0,
-        };
-        for(j=0;j<adlen; j++){
+        unsigned char ad[adlen];
+        for(j=0;j<len; j++){
             pt[j]=0;
         }
-        for(j=0;j<len; j++){
+        for(j=0;j<adlen; j++){
             ad[j]=j;
         }
         for(j=0;j<16; j++){
@@ -1538,12 +1602,33 @@ int main()
 		
         printf("len   %i", len);
         printf("\n---------------------------\n");
-        ae_ctx* ctx = ae_allocate(NULL);
 
-        ae_init(ctx, k2, 16, 12, 16);
-		
-        ae_encrypt(ctx, nonce, pt, len, ad, adlen, ct, tag, 1);
         
+        ae_ctx* ctx = ae_allocate(NULL);
+        double time_spent = 0.0;
+
+        int repeticiones=10000;
+        for(i=0;i<repeticiones; i++){
+
+            for(j=0;j<len; j++){
+                pt[j]=0;
+            }
+            for(j=0;j<adlen; j++){
+                ad[j]=j;
+            }
+            for(j=0;j<16; j++){
+                nonce[j]=j;
+            }
+            // auto start = high_resolution_clock::now();
+            // auto stop = high_resolution_clock::now();
+
+            ae_init(ctx, k2, 16, 12, 16);
+            clock_t begin = clock();
+            ae_encrypt(ctx, nonce, pt, len, ad, adlen, ct, tag, 1);
+            clock_t end = clock();
+            time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
+
+        }
         printf("Ciphertext   ");
         print_hex_string(ct,len);
         printf("\n---------------------------\n");
@@ -1551,7 +1636,14 @@ int main()
         imprimiArreglo(16,tag);
         printf("\n---------------------------\n");
 
+        // auto duration = duration_cast<microseconds>(stop - start);
+ 
+        // To get the value of duration use the count()
+        // member function on the duration object
+        // cout << "Time taken by function: "<< duration.count() << " microseconds" << endl;
 
+
+        printf("The elapsed time is %f seconds\n", time_spent/repeticiones);
         // ae_decrypt(ctx, nonce, ct, len, ad, adlen, pt2, tag2, 1);
 
         // printf("Plaintext    ");
@@ -1560,6 +1652,117 @@ int main()
         // printf("tag          ");
         // imprimiArreglo(16,tag2);
         // printf("\n---------------------------\n");
+        // ae_ctx* ctx = ae_allocate(NULL);
+        exit(1);
+        char outbuf[MAX_ITER*15+1024];
+	    int iter_list[MAX_ITER]; /* Populate w/ test lengths, -1 terminated */
+	    char *outp = outbuf;
+	    double Hz;
+	    double ipi=0, tmpd;
+        for (i=0; i<MAX_ITER; ++i)
+		iter_list[i] = i+1;
+	    if (MAX_ITER < 44) iter_list[i++] = 44;
+	    if (MAX_ITER < 552) iter_list[i++] = 552;
+	    if (MAX_ITER < 576) iter_list[i++] = 576;
+	    if (MAX_ITER < 1500) iter_list[i++] = 1500;
+	    if (MAX_ITER < 4096) iter_list[i++] = 4096;
+	    iter_list[i] = -1;
+
+        /* Create file for writing data */
+	    FILE *fp = NULL;
+        char str_time[25];
+	    time_t tmp_time = time(NULL);
+	    struct tm *tp = localtime(&tmp_time);
+	    strftime(str_time, sizeof(str_time), "%F %R", tp);
+	    if ((argc < 2) || (argc > 3)) {
+	    	printf("Usage: %s MHz [output_filename]\n", argv[0]);
+	    	return 0;
+	    } else {
+	    	Hz = 1e6 * strtol(argv[1], (char **)NULL, 10); (void)Hz;
+	    	if (argc == 3)
+	    		fp = fopen(argv[2], "w");
+	    }
+    
+        outp += sprintf(outp, "%s ", infoString);
+        #if __INTEL_COMPILER
+            outp += sprintf(outp, "- Intel C %d.%d.%d ",
+                (__ICC/100), ((__ICC/10)%10), (__ICC%10));
+        #elif _MSC_VER
+            outp += sprintf(outp, "- Microsoft C %d.%d ",
+                (_MSC_VER/100), (_MSC_VER%100));
+        #elif __clang_major__
+            outp += sprintf(outp, "- Clang C %d.%d.%d ",
+                __clang_major__, __clang_minor__, __clang_patchlevel__);
+        #elif __clang__
+            outp += sprintf(outp, "- Clang C 1.x ");
+        #elif __GNUC__
+            outp += sprintf(outp, "- GNU C %d.%d.%d ",
+                __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+        #endif
+
+        #if __x86_64__ || _M_X64
+        outp += sprintf(outp, "x86_64 ");
+        #elif __i386__ || _M_IX86
+        outp += sprintf(outp, "x86_32 ");
+        #elif __ARM_ARCH_7__ || __ARM_ARCH_7A__ || __ARM_ARCH_7R__ || __ARM_ARCH_7M__
+        outp += sprintf(outp, "ARMv7 ");
+        #elif __ARM__ || __ARMEL__
+        outp += sprintf(outp, "ARMv5 ");
+        #elif (__MIPS__ || __MIPSEL__) && __LP64__
+        outp += sprintf(outp, "MIPS64 ");
+        #elif __MIPS__ || __MIPSEL__
+        outp += sprintf(outp, "MIPS32 ");
+        #elif __ppc64__
+        outp += sprintf(outp, "PPC64 ");
+        #elif __ppc__
+        outp += sprintf(outp, "PPC32 ");
+        #elif __sparc__ && __LP64__
+        outp += sprintf(outp, "SPARC64 ");
+        #elif __sparc__
+        outp += sprintf(outp, "SPARC32 ");
+        #endif
+
+        outp += sprintf(outp, "- Run %s\n\n",str_time);
+
+	    outp += sprintf(outp, "Context: %d bytes\n", ae_ctx_sizeof());
+        DO(ae_init(ctx, key, 16, 12, 16));
+
+        num_values = 0;
+        DO(ae_init(ctx, key, 16, 12, 16));
+        outp += sprintf(outp, "Key setup: %d cycles\n\n", (int)((median_get())/(double)N));
+         /*
+          * Get times over different lengths
+          */
+        i=0;
+        len = iter_list[0];
+        while (len >= 0) {
+            nonce[11] = 0;
+            
+            DO(ae_encrypt(ctx, nonce, pt, len, NULL, 0, ct, tag, 1); nonce[11] += 1);
+            tmpd = ((median_get())/(len*(double)N));
+            outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
+            if (len==44) {
+                ipi += 0.05 * tmpd;
+            } else if (len==552) {
+                ipi += 0.15 * tmpd;
+            } else if (len==576) {
+                ipi += 0.2 * tmpd;
+            } else if (len==1500) {
+                ipi += 0.6 * tmpd;
+            }
+            
+            ++i;
+            len = iter_list[i];
+        }	
+        outp += sprintf(outp, "ipi %.2f\n", ipi);
+        if (fp) {
+            fprintf(fp, "%s", outbuf);
+            fclose(fp);
+        } else
+            fprintf(stdout, "%s", outbuf);
+
+        return ((pt[0]==12) && (pt[10]==34) && (pt[20]==56) && (pt[30]==78));
+      
     return 0;
 }
 
