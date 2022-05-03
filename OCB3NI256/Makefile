@@ -1,8 +1,8 @@
 CC=g++
 CFLAGS= -march=native 
 LIB= -O3
-SOURCES= OCBNI256V2AES.cpp timing_x86.cpp
-EXECNAME= OCBNI256V2AES
+SOURCES= OCB3NI256.cpp timing_x86.cpp
+EXECNAME= OCB3NI256
 
 all: 
 	$(CC) -o $(EXECNAME) $(SOURCES) $(LIB) $(CFLAGS) 
