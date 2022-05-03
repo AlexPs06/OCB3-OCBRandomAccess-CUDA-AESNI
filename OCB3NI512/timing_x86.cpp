@@ -48,7 +48,7 @@ int num_values = 0;
 extern char infoString[];  /* Each AE implementation must have a global one */
 
 #ifndef MAX_ITER
-#define MAX_ITER 63//196608 * 2
+#define MAX_ITER 196608 * 2
 #endif
 
 int comp(const void *x, const void *y) { return *(unsigned *)x - *(unsigned *)y; }
@@ -232,7 +232,7 @@ int main(int argc, char **argv)
         printf("\n---------------------------\n");
 
         long double time_spent = 0.0;
-        int repeticiones=1 ;
+        int repeticiones=10000 ;
         for(i=0;i<repeticiones; i++){
             for(j=0;j<adlen; j++){
                 ad[j]=j;
