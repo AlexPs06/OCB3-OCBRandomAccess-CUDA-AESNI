@@ -1,7 +1,7 @@
 #include<iostream>
 using namespace std;
 
-
+// d
 unsigned char GF2Redution(unsigned short in ){
     
     unsigned short temp = in ; // numero de prueba
