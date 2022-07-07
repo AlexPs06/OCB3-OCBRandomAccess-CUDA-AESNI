@@ -152,14 +152,12 @@ int main(int argc, char **argv)
     #endif
 
     outp += sprintf(outp, "- Run %s\n\n",str_time);
-    
 
 	outp += sprintf(outp, "Context: %d bytes\n", ae_ctx_sizeof());
-    DO(ae_init(ctx, key, 16, 12, MAX_ITER, 16));
-
+    DO(ae_init(ctx, key, 16, 12, MAX_ITER,16));
 
     num_values = 0;
-    DO(ae_init(ctx, key, 16, 12, MAX_ITER, 16));
+    DO(ae_init(ctx, key, 16, 12, MAX_ITER,16));
     outp += sprintf(outp, "Key setup: %d cycles\n\n", (int)((median_get())/(double)N));
         
 	/*
@@ -168,14 +166,17 @@ int main(int argc, char **argv)
 	i=0;
 	len = iter_list[0];
     while (len >= 0) {
+        // printf("%i\n",i);
+        // printf("%i\n",len);
 
         nonce[11] = 0;
         DO(ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1); nonce[11] += 1);
         tmpd = ((median_get())/(len*(double)N));
-        // printf("%i\n",i);
-        // if (len != 0){
+        // printf("%f\n",tmpd);
+        if (len != 0){
 		    outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
-        // }
+        }
+        
 
 		if (len==44) {
 			ipi += 0.05 * tmpd;
