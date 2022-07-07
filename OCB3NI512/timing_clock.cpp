@@ -3,9 +3,6 @@
 #include <stdlib.h>
 #include "ae.h"
 
-#define M 15
-#define N 64
-
 #if __GNUC__
 #define ALIGN(n)      __attribute__ ((aligned(n))) 
 #elif _MSC_VER
@@ -14,78 +11,27 @@
 #define ALIGN(n)
 #endif
 
-#if __INTEL_COMPILER
-  #define STAMP ((unsigned)__rdtsc())
-#elif (__GNUC__ && (__x86_64__ || __amd64__ || __i386__))
-  #define STAMP ({unsigned res; __asm__ __volatile__ ("rdtsc" : "=a"((unsigned)res) : : "edx"); res;})
-#elif (_M_IX86)
-  #include <intrin.h>
-  #pragma intrinsic(__rdtsc)
-  #define STAMP ((unsigned)__rdtsc())
-#else
-  #error -- Architechture not supported!
-#endif
-
-
-#define DO(x) do { \
-int i; \
-for (i = 0; i < M; i++) { \
-unsigned c2, c1;\
-x;x;\
-c1 = STAMP;\
-for (j = 0; j <= N; j++) { x; }\
-c1 = STAMP - c1;\
-x;x;\
-c2 = STAMP;\
-x;\
-c2 = STAMP - c2;\
-median_next(c1-c2);\
-} } while (0)
-
-unsigned values[M];
-int num_values = 0;
-
 extern char infoString[];  /* Each AE implementation must have a global one */
 
 #ifndef MAX_ITER
-#define MAX_ITER 8*1024
+#define MAX_ITER 10
 #endif
-
-int comp(const void *x, const void *y) { return *(unsigned *)x - *(unsigned *)y; }
-void median_next(unsigned x) { values[num_values++] = x; }
-unsigned median_get(void) {
-    unsigned res;
-    /*for (res = 0; res < num_values; res++)
-    //   printf("%d ", values[res]);
-    //printf("\n");*/
-    qsort(values, num_values, sizeof(unsigned), comp);
-    res = values[num_values/2];
-    num_values = 0;
-    return res;
-}
-void median_print(void) {
-    unsigned res;
-    qsort(values, num_values, sizeof(unsigned), comp);
-    for (res = 0; res < num_values; res++)
-       printf("%d ", values[res]);
-    printf("\n");
-}
 
 int main(int argc, char **argv)
 {
-
 	/* Allocate locals */
-	ALIGN(64) char pt[8*1024] = {0};
+	ALIGN(64) char pt[4194304] = {0};
 	ALIGN(16) char tag[16];
 	ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
 	ALIGN(16) unsigned char nonce[] = "abcdefghijklmnop";
 	char outbuf[MAX_ITER*15+1024];
-	int iter_list[MAX_ITER+10]; /* Populate w/ test lengths, -1 terminated */
+	int iter_list[2048]; /* Populate w/ test lengths, -1 terminated */
 	ae_ctx* ctx = ae_allocate(NULL);
 	char *outp = outbuf;
-	int i, j, len;
-	double Hz;
+	int iters, i, j, len;
+	double Hz,sec;
 	double ipi=0, tmpd;
+	clock_t c;
 
 	/* populate iter_list, terminate list with negative number */
 	for (i=0; i<MAX_ITER; ++i)
@@ -95,6 +41,11 @@ int main(int argc, char **argv)
 	if (MAX_ITER < 576) iter_list[i++] = 576;
 	if (MAX_ITER < 1500) iter_list[i++] = 1500;
 	if (MAX_ITER < 4096) iter_list[i++] = 4096;
+	if (MAX_ITER < 8192) iter_list[i++] = 8192;
+	if (MAX_ITER < 8192*2) iter_list[i++] = 8192*2;
+	if (MAX_ITER < 1048576) iter_list[i++] = 1048576;
+	if (MAX_ITER < 2097152) iter_list[i++] = 2097152;
+	if (MAX_ITER < 4194304) iter_list[i++] = 4194304;
 	iter_list[i] = -1;
 
     /* Create file for writing data */
@@ -137,46 +88,79 @@ int main(int argc, char **argv)
     outp += sprintf(outp, "ARMv7 ");
     #elif __ARM__ || __ARMEL__
     outp += sprintf(outp, "ARMv5 ");
-    #elif (__MIPS__ || __MIPSEL__) && __LP64__
-    outp += sprintf(outp, "MIPS64 ");
     #elif __MIPS__ || __MIPSEL__
     outp += sprintf(outp, "MIPS32 ");
     #elif __ppc64__
     outp += sprintf(outp, "PPC64 ");
     #elif __ppc__
     outp += sprintf(outp, "PPC32 ");
-    #elif __sparc__ && __LP64__
-    outp += sprintf(outp, "SPARC64 ");
     #elif __sparc__
-    outp += sprintf(outp, "SPARC32 ");
+    outp += sprintf(outp, "SPARC ");
     #endif
 
     outp += sprintf(outp, "- Run %s\n\n",str_time);
-    
 
 	outp += sprintf(outp, "Context: %d bytes\n", ae_ctx_sizeof());
-    DO(ae_init(ctx, key, 16, 12, 16));
+	
+	printf("Starting run...\n");fflush(stdout);
 
+	/*
+	 * Get time for key setup
+	 */
+	iters = (int)(Hz/520);
 
-    num_values = 0;
-    DO(ae_init(ctx, key, 16, 12, 16));
-    outp += sprintf(outp, "Key setup: %d cycles\n\n", (int)((median_get())/(double)N));
-        
+	do {
+	
+		ae_init(ctx, key, 16, 12, 16);
+		c = clock();
+		for (j = 0; j < iters; j++) {
+			ae_init(ctx, key, 16, 12, 16);
+		}
+		c = clock() - c;
+		sec = c/(double)CLOCKS_PER_SEC;
+		tmpd = (sec * Hz) / (iters);
+		
+		if ((sec < 1.2)||(sec > 1.3))
+			iters = (int)(iters * 5.0/(4.0 * sec));
+		printf("%f\n", sec);
+	} while ((sec < 1.2) || (sec > 1.3));
+	
+	printf("key -- %.2f (%d cycles)\n",sec,(int)tmpd);fflush(stdout);
+	outp += sprintf(outp, "Key setup: %d cycles\n\n", (int)tmpd);
+
 	/*
 	 * Get times over different lengths
 	 */
+	iters = (int)(Hz/1000);
+	printf("iteracioes -- %i\n\n",iters);fflush(stdout);
+
 	i=0;
 	len = iter_list[0];
-    while (len >= 0) {
+	double prom_time = 0;
 
-        nonce[11] = 0;
-        DO(ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1); nonce[11] += 1);
-        tmpd = ((median_get())/(len*(double)N));
-        // printf("%i\n",i);
-        // if (len != 0){
-		    outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
-        // }
-
+	while (len >= 0) {
+	
+		do {
+		
+			ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1);
+			c = clock();
+			for (j = 0; j < iters; j++) {
+				ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1);
+				nonce[11] += 1;
+			}
+			c = clock() - c;
+			sec = c/(double)CLOCKS_PER_SEC;
+			tmpd = (sec * Hz) / ((double)len * iters);
+			prom_time = sec/iters;
+			
+			if ((sec < 1.2)||(sec > 1.3))
+				iters = (int)(iters * 5.0/(4.0 * sec));
+			
+		} while ((sec < 1.2) || (sec > 1.3));
+		
+		printf("%d -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
+		outp += sprintf(outp,"%d -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time);fflush(stdout);
+		// outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
 		if (len==44) {
 			ipi += 0.05 * tmpd;
 		} else if (len==552) {
@@ -189,7 +173,7 @@ int main(int argc, char **argv)
 		
 		++i;
 		len = iter_list[i];
-	}	
+	}
 	outp += sprintf(outp, "ipi %.2f\n", ipi);
 	if (fp) {
         fprintf(fp, "%s", outbuf);
@@ -198,6 +182,4 @@ int main(int argc, char **argv)
         fprintf(stdout, "%s", outbuf);
 
 	return ((pt[0]==12) && (pt[10]==34) && (pt[20]==56) && (pt[30]==78));
-    return 0;
 }
-

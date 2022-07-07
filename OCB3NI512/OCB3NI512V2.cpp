@@ -459,8 +459,6 @@ struct _ae_ctx {
     uint32_t blocks_processed;
     AES_KEY decrypt_key;
     AES_KEY encrypt_key;
-    AES_KEY_512 decrypt_key_512;
-    AES_KEY_512 encrypt_key_512;
     #if (OCB_TAG_LEN == 0)
     unsigned tag_len;
     #endif
@@ -836,7 +834,6 @@ int ae_encrypt(ae_ctx     *  ctx,
     /* Non-null nonce means start of new message, init per-message values */
     if (nonce) {
         ctx->offset = gen_offset_from_nonce(ctx, nonce);
-
         ctx->ad_offset = ctx->checksum   = zero_block();
         ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         if (ad_len >= 0)
@@ -856,12 +853,10 @@ int ae_encrypt(ae_ctx     *  ctx,
     checksum.checksum512  = zero_block_512();
     i = pt_len/(BPI*64);
     if (i) {
-
-    	// block oa[BPI];
     	union {block oa128[4*BPI]; block512 oa512[BPI];} oa;
         block512 ta[BPI];
     	unsigned block_num = ctx->blocks_processed;
-    	// oa[BPI-1] = offset;
+
 		do {
             for(int j = 0; j<4*BPI; j=j+4){
                 block_num += 4;
@@ -885,6 +880,9 @@ int ae_encrypt(ae_ctx     *  ctx,
 			ctp += BPI;
 
 		} while (--i);
+
+
+		
     	ctx->offset = offset = oa.oa128[4*BPI-1];
 	    ctx->blocks_processed = block_num;
 		// ctx->checksum = checksum;
@@ -1005,8 +1003,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 		if (remaining) {
 			--k;
-			imprimiArreglo2(16,(unsigned char *)&ta[k]);
-			imprimiArreglo2(16,(unsigned char *)&tmp512.bl);
 
 			tmp512.bl = xor_block_512(tmp512.bl, ta[k]);
 			memcpy(ctp+k, tmp512.u8, remaining);
@@ -1036,27 +1032,7 @@ int ae_encrypt(ae_ctx     *  ctx,
         offset = xor_block(offset, ctx->Ldollar);      /* Part of tag gen */
 		checksumFinal = xor_block(offset, checksumFinal);           /* Part of tag gen */
 		AES_ecb_encrypt_blks(&checksumFinal,1,&ctx->encrypt_key);
-		// for(int i=0; i<k; i++){
-        //     printf("------\n");
-		// 	imprimiArreglo(16,(unsigned char *)&oa[i]);
-		// }
 		offset = xor_block(checksumFinal, ctx->ad_checksum);   /* Part of tag gen */
-	// 	if (remaining) {
-	// 		--k;
-	// 		tmp.bl = xor_block(tmp.bl, ta[k]);
-	// 		memcpy(ctp+k, tmp.u8, remaining);
-	// 	}
-	// 	switch (k) {
-	// 		#if (BPI == 8)
-	// 		case 7: ctp[6] = xor_block(ta[6], oa[6]);
-	// 		case 6: ctp[5] = xor_block(ta[5], oa[5]);
-	// 		case 5: ctp[4] = xor_block(ta[4], oa[4]);
-	// 		case 4: ctp[3] = xor_block(ta[3], oa[3]);
-	// 		#endif
-	// 		case 3: ctp[2] = xor_block(ta[2], oa[2]);
-	// 		case 2: ctp[1] = xor_block(ta[1], oa[1]);
-	// 		case 1: ctp[0] = xor_block(ta[0], oa[0]);
-	// 	}
         /* Tag is placed at the correct location
          */
         if (tag) {
@@ -1078,6 +1054,7 @@ int ae_encrypt(ae_ctx     *  ctx,
         }
     }
     return (int) pt_len;
+	return 1;
 }
 
 /* ----------------------------------------------------------------------- */
