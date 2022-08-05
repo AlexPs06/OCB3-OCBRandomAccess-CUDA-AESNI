@@ -61,7 +61,7 @@
 /  L values to precompute. L_TABLE_SZ must be at least 3. L_TABLE_SZ*16 bytes
 /  are used for L values in ae_ctx. Plaintext and ciphertexts shorter than
 /  2^L_TABLE_SZ blocks need no L values calculated dynamically.            */
-#define L_TABLE_SZ          16
+#define L_TABLE_SZ          64
 
 /* Set L_TABLE_SZ_IS_ENOUGH non-zero iff you know that all plaintexts
 /  will be shorter than 2^(L_TABLE_SZ+4) bytes in length. This results

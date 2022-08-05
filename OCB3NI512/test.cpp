@@ -48,7 +48,7 @@ int num_values = 0;
 extern char infoString[];  /* Each AE implementation must have a global one */
 
 #ifndef MAX_ITER
-#define MAX_ITER 64
+#define MAX_ITER 1048576
 #endif
 
 int comp(const void *x, const void *y) { return *(unsigned *)x - *(unsigned *)y; }
@@ -100,11 +100,12 @@ void print_hex_string(unsigned char* buf, int len)
     for (i = 0; i < len; i++)
         printf("%02x", *((unsigned char *)buf + i));
 }
+ALIGN(64) unsigned char pt[MAX_ITER] = {0};
+char outbuf[MAX_ITER*15+1024+4096];
 
 int main(int argc, char **argv)
 {
 	/* Allocate locals */
-	ALIGN(64) unsigned char pt[MAX_ITER] = {0};
 	ALIGN(16) unsigned char tag[16];
 	ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
 	ALIGN(16) unsigned char nonce[] = {
@@ -113,7 +114,6 @@ int main(int argc, char **argv)
         0x31, 0x31, 0x98, 0xa2,
         0xe0, 0x37, 0x07, 0x35,
     };
-    char outbuf[MAX_ITER*15+1024];
 	int iter_list[MAX_ITER]; /* Populate w/ test lengths, -1 terminated */
 	ae_ctx* ctx = ae_allocate(NULL);
 	char *outp = outbuf;
@@ -218,9 +218,9 @@ int main(int argc, char **argv)
         for(j=0;j<len; j++){
             pt[j]=j;
         }
-        // for(j=0;j<16; j++){
-        //     nonce[j]=j;
-        // }
+        for(j=0;j<16; j++){
+            nonce[j]=j;
+        }
 
         printf("nonce   ");
         imprimiArreglo(16,nonce);
@@ -257,7 +257,7 @@ int main(int argc, char **argv)
 
             clock_t begin = clock();
 
-            ae_encrypt(ctx, nsec2, pt, len, ad, adlen, pt, tag, 1);
+            ae_encrypt(ctx, nonce, pt, len, ad, adlen, pt, tag, 1);
             
             clock_t end = clock();
             time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
