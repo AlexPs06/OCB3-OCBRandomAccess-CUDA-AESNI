@@ -70,7 +70,7 @@
 
 #define AES_ROUNDS 2 /*Number of cuda rounds for the lamda*/
 
-#define ALIGN(n)      __attribute__ ((aligned(n))) 
+#define ALIGN(n)      __attribute__ ((aligned(n)))
 #define BPI 8  /* Number of blocks in buffer per ECB call   */
                /* Set to 4 for Westmere, 8 for Sandy Bridge */
 /* ----------------------------------------------------------------------- */
@@ -212,6 +212,8 @@ void imprimiArreglo2(int tam, unsigned char *in )
 /*----------*/
 
 #include <wmmintrin.h>
+#define AES_ROUNDS_2 2 /*Number of AES rounds for the lamda*/
+
 
 #if (OCB_KEY_LEN == 0)
 	typedef struct { __m128i rd_key[15]; int rounds; } AES_KEY;
@@ -311,7 +313,6 @@ static int AES_set_encrypt_key(const unsigned char *userKey, const int bits, AES
     	key->rounds = 6+bits/32;
     #endif
     return 0;
-#define AES_ROUNDS_2 2 /*Number of cuda rounds for the lamda*/
 }
 
 static void AES_set_decrypt_key_fast(AES_KEY *dkey, const AES_KEY *ekey)
@@ -338,7 +339,7 @@ static int AES_cast_128_to_512_key(AES_KEY *key, AES_KEY_512 *key512)
 {
 
     unsigned char tem[704];
-   
+
     for(int i = 0; i< 11; i++ ){
         _mm_storeu_si128(&((__m128i*)tem)[i*4],key->rd_key[i]);
         _mm_storeu_si128(&((__m128i*)tem)[i*4 +1],key->rd_key[i]);
@@ -362,7 +363,7 @@ static AES_KEY_512 AES_cast_128_to_512_key2(AES_KEY *key)
         oa.oa128[3] = key->rd_key[i];
         temporal.rd_key[i]=oa.oa512;
     }
-    
+
     return temporal;
 }
 static inline void AES_encrypt(const unsigned char *in,
@@ -430,7 +431,7 @@ static inline void AES_ecb_encrypt_blks_512(block512 *blks, unsigned nblks, AES_
 	    for (i=0; i<nblks; ++i)
 		    blks[i] = _mm512_aesenc_epi128(blks[i], sched[j]); //80cc
     for (i=0; i<nblks; ++i)
-	    blks[i] =_mm512_aesenclast_epi128(blks[i], sched[j]); 
+	    blks[i] =_mm512_aesenclast_epi128(blks[i], sched[j]);
 }
 
 
@@ -593,7 +594,7 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int pt_len
     if(pt_len!=0 && ctx->num_of_nonces ==0){
         ctx->num_of_nonces=1;
     }
-    // ctx->encrypt_key_512 = new 
+    // ctx->encrypt_key_512 = new
     // AES_KEY_512 temporal;
     // union {block oa128[4]; block512 oa512;} oa;
     // oa.oa128[0]=ctx->encrypt_key.rd_key[i];
@@ -602,12 +603,12 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int pt_len
     // oa.oa128[3]=ctx->encrypt_key.rd_key[i];
     // temporal.rd_key[0]=oa.oa512;
     // for(i = 0; i< 11; i++ ){
-	
+
 	// 	imprimiArreglo2(16,(unsigned char *)&ctx->encrypt_key.rd_key[i]);
 	// }
-    
+
     // for(i = 0; i< 11; i++ ){
-	
+
 	// 	imprimiArreglo2(16,(unsigned char *)&ctx->encrypt_key_512.rd_key[i]);
 	// }
     // block s = xor_block(ctx->encrypt_key.rd_key[0], ctx->encrypt_key.rd_key[0] );
@@ -650,12 +651,12 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce)
 {
     unsigned i;
     block add1 = _mm_set_epi8 (
-        0x00, 0x00, 0x00, 0x00, 
-        0x00, 0x00, 0x00, 0x00, 
-        0x00, 0x00, 0x00, 0x00, 
+        0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x01,
         0x00, 0x00, 0x00, 0x01
     );
-    
+
     block bloques128[ctx->num_of_nonces];
     block512 bloques512[ctx->num_of_nonces];
 
@@ -670,7 +671,7 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce)
     }
 
     AES_ecb_encrypt_blks(bloques128, ctx->num_of_nonces,&ctx->encrypt_key);
-    
+
     int j =0;
     for(i = 0; i<ctx->num_of_nonces; i++ ){
         _mm_storeu_si128(&((__m128i*)tmp_array)[j],bloques128[i]  );
@@ -860,7 +861,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 	// }
 	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
 
-	union { uint32_t u32[16]; uint8_t u8[64]; block512 bl; block bl128[4]; } tmp512;
+	union { uint32_t u32[16]; uint8_t u8[64] = {0,} ; block512 bl; block bl128[4]; } tmp512;
     union {block512  checksum512; block checksum128[4];} checksum;
     union {block bl128[4]; block512 bl512;} add_nonce;
 
@@ -877,7 +878,7 @@ int ae_encrypt(ae_ctx     *  ctx,
         gen_offset_from_nonce(ctx, nonce);
 
         // ctx->checksum   = zero_block_512();
-        // ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
+        ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         // if (ad_len >= 0)
         // 	ctx->ad_checksum = zero_block_512();
     }
@@ -887,38 +888,41 @@ int ae_encrypt(ae_ctx     *  ctx,
 		process_ad(ctx, ad, ad_len, final);
 
 	/* Encrypt plaintext data BPI blocks at a time */
-    
+
 
     AES_KEY_512 keys512 =  AES_cast_128_to_512_key2(&ctx->encrypt_key);
 
 
     add_nonce.bl512 = _mm512_set_epi32 (
         0x03, 0x03, 0x03, 0x03,
-        0x02, 0x02, 0x02, 0x02, 
-        0x01, 0x01, 0x01, 0x01, 
+        0x02, 0x02, 0x02, 0x02,
+        0x01, 0x01, 0x01, 0x01,
         0x00, 0x00, 0x00, 0x00
 
     );
 
     block512 add4 = _mm512_set_epi32 (
-        0x04, 0x04, 0x04, 0x04, 
-        0x04, 0x04, 0x04, 0x04, 
-        0x04, 0x04, 0x04, 0x04, 
+        0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04,
         0x04, 0x04, 0x04, 0x04
     );
 
-    
+
     unsigned index;
 
     // offset = ctx->offset;
     checksum.checksum512  = zero_block_512();
     i = pt_len/(BPI*64);
+
+	// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
+
 	ctx->nonces[index]=swap_if_le512(ctx->nonces[index]);
     if (i) {
         block512 ta[BPI];
         block512 delta[BPI];
     	unsigned block_num = ctx->blocks_processed;
-        
+
 		do {
             for(int j = 0; j<BPI; j++){
                delta[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
@@ -943,7 +947,7 @@ int ae_encrypt(ae_ctx     *  ctx,
             block_num+=32;
 
 		} while (--i);
-		
+
 	    ctx->blocks_processed = block_num;
     }
     if (final) {
@@ -961,7 +965,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 			if (remaining >= 256) {
 				for(int j = 0; j<4; j++){
 			    	checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[j]);
-					
+
 					delta.deltak512[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 					delta.deltak512[j]=swap_if_le512(delta.deltak512[j]);
@@ -996,7 +1000,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 			if (remaining) {
 
 				if(remaining%16==0){
-					block_num = block_num  + remaining/16; 
+					block_num = block_num  + remaining/16;
 			    	checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[k]);
 					remaining=remaining-remaining;
 
@@ -1006,13 +1010,13 @@ int ae_encrypt(ae_ctx     *  ctx,
 				}
 				else{
 					delta.deltak512[k] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
-					
-					block_num = block_num  + ceil(remaining/16)+1; 
+
+					block_num = block_num  + ceil(remaining/16)+1;
 
 					block add1 = _mm_set_epi32 (0x01, 0x01, 0x01, 0x01);
 					indexBlock = floor(remaining/16);
 					delta.deltak128[4*k +indexBlock] = _mm_add_epi32(add1,delta.deltak128[4*k +indexBlock]);
-					
+
 					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 
@@ -1024,8 +1028,8 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 					memcpy(tmp512.u8, ptp+k, remaining);
 					tmp512.bl128[indexBlock] = _mm_xor_si128(temp128[0],tmp512.bl128[indexBlock] );
+					checksum.checksum128[0] = xor_block(checksum.checksum128[0], tmp512.bl128[indexBlock]);
 
-					checksum.checksum128[0] = xor_block(checksum.checksum128[0], temp128[0]);
 				}
 
 				++k;
@@ -1034,13 +1038,17 @@ int ae_encrypt(ae_ctx     *  ctx,
 		}
 
 		// for(int j = 0; j<k; j++){
-			
+
 		// 	delta[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
-			
+
 		// 	add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
-			
+
 		// 	delta[j]=swap_if_le512(delta[j]);
         // }
+		// imprimiArreglo2(16,(unsigned char *)&delta.deltak512);
+		// ctx->nonces[index] =swap_if_le512(ctx->nonces[index]);
+
+		// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
 
 		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys512,AES_ROUNDS);
 
@@ -1062,7 +1070,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[0]  );
 		// exit(1);
 		if (remaining) {
-			--k; 
+			--k;
 
 			ta.ta128[4*(k) + indexBlock] = _mm_xor_si128( ta.ta128[4*(k) + indexBlock], tmp512.bl128[indexBlock]);
 
@@ -1085,23 +1093,22 @@ int ae_encrypt(ae_ctx     *  ctx,
 			case 1: ctp[0] = xor_block_512(delta.deltak512[0], ta.ta512[0]);
 		}
 
-		
+
 
         __m128i checksumFinal  = _mm_setzero_si128();
         i=0;
-        
+
         while( temp_len>0 && i<4){
             checksumFinal =  _mm_xor_si128( checksumFinal, checksum.checksum128[i]);
             temp_len = temp_len-16;
             i++;
         }
 		tmp512.bl=ctx->nonces[index];
-		
         block nonce128 = tmp512.bl128[index];
 		//  _mm_loadu_si128(&((__m128i*)&ctx->nonces[index])[0]);
 
-        int index_nonce_checksum =ctx->blocks_processed%4; 
-        block add3; 
+        int index_nonce_checksum =ctx->blocks_processed%4;
+        block add3;
 		if(index_nonce_checksum==0)
 			add3 = _mm_set_epi32 (0x03, 0x03, 0x03, 0x03);
 		else
@@ -1116,12 +1123,19 @@ int ae_encrypt(ae_ctx     *  ctx,
 
         nonce128 = _mm_add_epi32 (nonce128, add_nonce.bl128[index_nonce_checksum]);
         nonce128 =  swap_if_le(nonce128);
-		
+
+		// imprimiArreglo2(16,(unsigned char *)&nonce128  );
+
         AES_ecb_encrypt_blks_ROUNDS(&nonce128, 1, &ctx->encrypt_key ,AES_ROUNDS);
+
+		// imprimiArreglo2(16,(unsigned char *)&nonce128  );
+
         checksumFinal = xor_block(nonce128, checksumFinal);           /* Part of tag gen */
+		// imprimiArreglo2(16,(unsigned char *)&nonce128  );
+
 		AES_ecb_encrypt_blks(&checksumFinal,1,&ctx->encrypt_key);
 		offset = xor_block(checksumFinal, ctx->ad_checksum);   /* Part of tag gen */
-	
+
         if (tag) {
 			#if (OCB_TAG_LEN == 16)
             	*(block *)tag = offset;
@@ -1177,200 +1191,360 @@ int ae_decrypt(ae_ctx     *ctx,
                const void *tag,
                int         final)
 {
-	// union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
-    // block offset, checksum;
-    // unsigned i, k;
-    // block       *ctp = (block *)ct;
-    // block       *ptp = (block *)pt;
+	// if(pt_len==0){
+	// 	return 0;
+	// }
+	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
 
-	// /* Reduce ct_len tag bundled in ct */
-	// if ((final) && (!tag))
-	// 	#if (OCB_TAG_LEN > 0)
-	// 		ct_len -= OCB_TAG_LEN;
-	// 	#else
-	// 		ct_len -= ctx->tag_len;
-	// 	#endif
+	union { uint32_t u32[16]; uint8_t u8[64] = {0,} ; block512 bl; block bl128[4]; } tmp512;
+    union {block512  checksum512; block checksum128[4];} checksum;
+    union {block bl128[4]; block512 bl512;} add_nonce;
 
-    // /* Non-null nonce means start of new message, init per-message values */
-    // if (nonce) {
-    //     ctx->offset = gen_offset_from_nonce(ctx, nonce);
-    //     ctx->ad_offset = ctx->checksum   = zero_block();
-    //     ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
-    //     if (ad_len >= 0)
-    //     	ctx->ad_checksum = zero_block();
-    // }
+    unsigned temp_len = ct_len;
+    block offset;
+    unsigned i, k;
+    // block       * ctp = (block *)ct;
+    const block * ctp128 = (block *)ct;
+    const block512       * ctp = (block512 *)ct;
+    block512 * ptp = (block512 *)pt;
 
-	// /* Process associated data */
-	// if (ad_len > 0)
-	// 	process_ad(ctx, ad, ad_len, final);
+    /* Non-null nonce means start of new message, init per-message values */
+    if (nonce) {
+        gen_offset_from_nonce(ctx, nonce);
 
-	// /* Encrypt plaintext data BPI blocks at a time */
+        // ctx->checksum   = zero_block_512();
+        ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
+        // if (ad_len >= 0)
+        // 	ctx->ad_checksum = zero_block_512();
+    }
+
+	/* Process associated data */
+	if (ad_len > 0)
+		process_ad(ctx, ad, ad_len, final);
+
+	/* Encrypt plaintext data BPI blocks at a time */
+
+
+    AES_KEY_512 keys_encrypt_512 =  AES_cast_128_to_512_key2(&ctx->encrypt_key);
+    AES_KEY_512 keys_decrypt_512 =  AES_cast_128_to_512_key2(&ctx->decrypt_key);
+
+
+    add_nonce.bl512 = _mm512_set_epi32 (
+        0x03, 0x03, 0x03, 0x03,
+        0x02, 0x02, 0x02, 0x02,
+        0x01, 0x01, 0x01, 0x01,
+        0x00, 0x00, 0x00, 0x00
+
+    );
+
+    block512 add4 = _mm512_set_epi32 (
+        0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04
+    );
+
+
+    unsigned index;
+
     // offset = ctx->offset;
-    // checksum  = ctx->checksum;
-    // i = ct_len/(BPI*16);
-    // if (i) {
-    // 	block oa[BPI];
-    // 	unsigned block_num = ctx->blocks_processed;
-    // 	oa[BPI-1] = offset;
-	// 	do {
-	// 		block ta[BPI];
-	// 		block_num += BPI;
-	// 		oa[0] = xor_block(oa[BPI-1], ctx->L[0]);
-	// 		ta[0] = xor_block(oa[0], ctp[0]);
-	// 		oa[1] = xor_block(oa[0], ctx->L[1]);
-	// 		ta[1] = xor_block(oa[1], ctp[1]);
-	// 		oa[2] = xor_block(oa[1], ctx->L[0]);
-	// 		ta[2] = xor_block(oa[2], ctp[2]);
-	// 		#if BPI == 4
-	// 			oa[3] = xor_block(oa[2], getL(ctx, ntz(block_num)));
-	// 			ta[3] = xor_block(oa[3], ctp[3]);
-	// 		#elif BPI == 8
-	// 			oa[3] = xor_block(oa[2], ctx->L[2]);
-	// 			ta[3] = xor_block(oa[3], ctp[3]);
-	// 			oa[4] = xor_block(oa[1], ctx->L[2]);
-	// 			ta[4] = xor_block(oa[4], ctp[4]);
-	// 			oa[5] = xor_block(oa[0], ctx->L[2]);
-	// 			ta[5] = xor_block(oa[5], ctp[5]);
-	// 			oa[6] = xor_block(oa[7], ctx->L[2]);
-	// 			ta[6] = xor_block(oa[6], ctp[6]);
-	// 			oa[7] = xor_block(oa[6], getL(ctx, ntz(block_num)));
-	// 			ta[7] = xor_block(oa[7], ctp[7]);
-	// 		#endif
-	// 		AES_ecb_decrypt_blks(ta,BPI,&ctx->decrypt_key);
-	// 		ptp[0] = xor_block(ta[0], oa[0]);
-	// 		checksum = xor_block(checksum, ptp[0]);
-	// 		ptp[1] = xor_block(ta[1], oa[1]);
-	// 		checksum = xor_block(checksum, ptp[1]);
-	// 		ptp[2] = xor_block(ta[2], oa[2]);
-	// 		checksum = xor_block(checksum, ptp[2]);
-	// 		ptp[3] = xor_block(ta[3], oa[3]);
-	// 		checksum = xor_block(checksum, ptp[3]);
-	// 		#if (BPI == 8)
-	// 		ptp[4] = xor_block(ta[4], oa[4]);
-	// 		checksum = xor_block(checksum, ptp[4]);
-	// 		ptp[5] = xor_block(ta[5], oa[5]);
-	// 		checksum = xor_block(checksum, ptp[5]);
-	// 		ptp[6] = xor_block(ta[6], oa[6]);
-	// 		checksum = xor_block(checksum, ptp[6]);
-	// 		ptp[7] = xor_block(ta[7], oa[7]);
-	// 		checksum = xor_block(checksum, ptp[7]);
-	// 		#endif
-	// 		ptp += BPI;
-	// 		ctp += BPI;
-	// 	} while (--i);
-    // 	ctx->offset = offset = oa[BPI-1];
-	//     ctx->blocks_processed = block_num;
-	// 	ctx->checksum = checksum;
-    // }
+    checksum.checksum512  = zero_block_512();
+    i = ct_len/(BPI*64);
 
-    // if (final) {
-	// 	block ta[BPI+1], oa[BPI];
+	// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
 
-    //     /* Process remaining plaintext and compute its tag contribution    */
-    //     unsigned remaining = ((unsigned)ct_len) % (BPI*16);
-    //     k = 0;                      /* How many blocks in ta[] need ECBing */
-    //     if (remaining) {
-	// 		#if (BPI == 8)
-	// 		if (remaining >= 64) {
-	// 			oa[0] = xor_block(offset, ctx->L[0]);
-	// 			ta[0] = xor_block(oa[0], ctp[0]);
-	// 			oa[1] = xor_block(oa[0], ctx->L[1]);
-	// 			ta[1] = xor_block(oa[1], ctp[1]);
-	// 			oa[2] = xor_block(oa[1], ctx->L[0]);
-	// 			ta[2] = xor_block(oa[2], ctp[2]);
-	// 			offset = oa[3] = xor_block(oa[2], ctx->L[2]);
-	// 			ta[3] = xor_block(offset, ctp[3]);
-	// 			remaining -= 64;
-	// 			k = 4;
-	// 		}
-	// 		#endif
-	// 		if (remaining >= 32) {
-	// 			oa[k] = xor_block(offset, ctx->L[0]);
-	// 			ta[k] = xor_block(oa[k], ctp[k]);
-	// 			offset = oa[k+1] = xor_block(oa[k], ctx->L[1]);
-	// 			ta[k+1] = xor_block(offset, ctp[k+1]);
-	// 			remaining -= 32;
-	// 			k+=2;
-	// 		}
-	// 		if (remaining >= 16) {
-	// 			// imprimiArreglo(16,(unsigned char *)&ctx->ad_checksum);
-	// 			// imprimiArreglo(16,(unsigned char *)&offset);
-	// 			// imprimiArreglo(16,(unsigned char *)&ctp[k]);
+	ctx->nonces[index]=swap_if_le512(ctx->nonces[index]);
+    if (i) {
+        block512 ta[BPI];
+        block512 delta[BPI];
+    	unsigned block_num = ctx->blocks_processed;
 
-	// 			offset = oa[k] = xor_block(offset, ctx->L[0]);
-	// 			ta[k] = xor_block(offset, ctp[k]);
-	// 			remaining -= 16;
-	// 			++k;
-	// 		}
-	// 		if (remaining) {
-	// 			block pad;
-	// 			offset = xor_block(offset,ctx->Lstar);
-	// 			AES_encrypt((unsigned char *)&offset, tmp.u8, &ctx->encrypt_key);
-	// 			pad = tmp.bl;
-	// 			memcpy(tmp.u8,ctp+k,remaining);
-	// 			tmp.bl = xor_block(tmp.bl, pad);
+		do {
+            for(int j = 0; j<BPI; j++){
+               delta[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+               add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
+               delta[j]=swap_if_le512(delta[j]);
+            }
+
+            AES_ecb_encrypt_blks_512_ROUNDS(delta, BPI, &keys_encrypt_512,AES_ROUNDS);
+
+            for(int j = 0; j<BPI; j++){
+			    ta[j] = xor_block_512(delta[j], ctp[j]);
+            }
+
+			AES_ecb_decrypt_blks_512(ta,BPI,&keys_decrypt_512);
+            for(int j = 0; j<BPI; j++){
+                ptp[j]= xor_block_512(ta[j], delta[j]);
+				checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[j]);
+
+            }
+
+            ptp += BPI;
+			ctp += BPI;
+            block_num+=32;
+
+		} while (--i);
+
+	    ctx->blocks_processed = block_num;
+    }
+	// printf("soy block_num %i\n,",ctx->blocks_processed );
+
+    if (final) {
+
+		union {block ta128[4*BPI]; block512 ta512[BPI];} ta;
+		union {block deltak128[4*BPI]; block512 deltak512[BPI];} delta;
+        /* Process remaining plaintext and compute its tag contribution    */
+        unsigned remaining = ((unsigned)ct_len) % (BPI*64);
+        k = 0;                      /* How many blocks in ta[] need ECBing */
+		unsigned block_num = ctx->blocks_processed;
+
+		int indexBlock;
+        if (remaining) {
+
+			#if (BPI == 8)
+			if (remaining >= 256) {
+				for(int j = 0; j<4; j++){
+
+					delta.deltak512[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
+					delta.deltak512[j]=swap_if_le512(delta.deltak512[j]);
+            	}
+				remaining -= 256;
+				k = 4;
+				block_num += 16;
+			}
+			#endif
+			if (remaining >= 128) {
+
+				for(int j = k; j<k+2; j++){
+					delta.deltak512[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
+					delta.deltak512[j]=swap_if_le512(delta.deltak512[j]);
+            	}
+				remaining -= 128;
+				k += 2;
+
+				block_num += 8;
+			}
+			if (remaining >= 64) {
+				delta.deltak512[k] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+				add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
+				delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
+				block_num += 4;
+				remaining -= 64;
+				++k;
+			}
+			if (remaining) {
+
+				if(remaining%16==0){
+
+					block_num = block_num  + remaining/16;
+			    	// checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[k]);
+					remaining=remaining-remaining;
 
 
+					delta.deltak512[k] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
+					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 
-	// 			tmp.u8[remaining] = (unsigned char)0x80u;
+				}
+				else{
+					delta.deltak512[k] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
 
+					block_num = block_num  + ceil(remaining/16)+1;
 
-	// 			memcpy(ptp+k, tmp.u8, remaining);
-	// 			checksum = xor_block(checksum, tmp.bl);
-	// 		}
-	// 	}
+					block add1 = _mm_set_epi32 (0x01, 0x01, 0x01, 0x01);
+					indexBlock = floor(remaining/16);
+					delta.deltak128[4*k +indexBlock] = _mm_add_epi32(add1,delta.deltak128[4*k +indexBlock]);
+
+					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
+					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 
 
 
-	// 	AES_ecb_decrypt_blks(ta,k,&ctx->decrypt_key);
-	// 	switch (k) {
-	// 		#if (BPI == 8)
-	// 		case 7: ptp[6] = xor_block(ta[6], oa[6]);
-	// 			    checksum = xor_block(checksum, ptp[6]);
-	// 		case 6: ptp[5] = xor_block(ta[5], oa[5]);
-	// 			    checksum = xor_block(checksum, ptp[5]);
-	// 		case 5: ptp[4] = xor_block(ta[4], oa[4]);
-	// 			    checksum = xor_block(checksum, ptp[4]);
-	// 		case 4: ptp[3] = xor_block(ta[3], oa[3]);
-	// 			    checksum = xor_block(checksum, ptp[3]);
-	// 		#endif
-	// 		case 3: ptp[2] = xor_block(ta[2], oa[2]);
-	// 			    checksum = xor_block(checksum, ptp[2]);
-	// 		case 2: ptp[1] = xor_block(ta[1], oa[1]);
-	// 			    checksum = xor_block(checksum, ptp[1]);
-	// 		case 1: ptp[0] = xor_block(ta[0], oa[0]);
-	// 			    checksum = xor_block(checksum, ptp[0]);
-	// 	}
+					ALIGN(16) unsigned char temp[16]={0,};
+					temp[remaining%16]=1;
+					block * temp128 = (block *)temp;
 
-	// 	/* Calculate expected tag */
+					memcpy(tmp512.u8, ptp+k, remaining);
+					tmp512.bl128[indexBlock] = _mm_xor_si128(temp128[0],tmp512.bl128[indexBlock] );
+					// checksum.checksum128[0] = xor_block(checksum.checksum128[0], tmp512.bl128[indexBlock]);
 
-    //     offset = xor_block(offset, ctx->Ldollar);
-    //     tmp.bl = xor_block(offset, checksum);
-	// 	// imprimiArreglo(16, (unsigned char *)&offset);
-	// 	// imprimiArreglo(16,(unsigned char *)&checksum );
+				}
 
-	// 	AES_encrypt(tmp.u8, tmp.u8, &ctx->encrypt_key);
-	// 	tmp.bl = xor_block(tmp.bl, ctx->ad_checksum); /* Full tag */
+				++k;
+			}
+			ctx->blocks_processed = block_num;
+		}
 
-	// 	/* Compare with proposed tag, change ct_len if invalid */
-	// 	if ((OCB_TAG_LEN == 16) && tag) {
-	// 		if (unequal_blocks(tmp.bl, *(block *)tag))
-	// 			ct_len = AE_INVALID;
-	// 	} else {
-	// 		#if (OCB_TAG_LEN > 0)
-	// 			int len = OCB_TAG_LEN;
-	// 		#else
-	// 			int len = ctx->tag_len;
-	// 		#endif
-	// 		if (tag) {
-	// 			if (constant_time_memcmp(tag,tmp.u8,len) != 0)
-	// 				ct_len = AE_INVALID;
-	// 		} else {
-	// 			if (constant_time_memcmp((char *)ct + ct_len,tmp.u8,len) != 0)
-	// 				ct_len = AE_INVALID;
-	// 		}
-	// 	}
-    // }
+		// for(int j = 0; j<k; j++){
+
+		// 	delta[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+
+		// 	add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
+
+		// 	delta[j]=swap_if_le512(delta[j]);
+        // }
+		// imprimiArreglo2(16,(unsigned char *)&delta.deltak512);
+		// ctx->nonces[index] =swap_if_le512(ctx->nonces[index]);
+
+		// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
+
+		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys_encrypt_512,AES_ROUNDS);
+
+		for(int j = 0; j<k; j++){
+			ta.ta512[j] = xor_block_512(delta.deltak512[j], ptp[j]);
+		}
+
+		if (remaining) {
+			ta.ta128[4*(k-1) + indexBlock] = delta.deltak128[4*(k-1) + indexBlock];
+		}
+		// printf("%i\n",indexBlock);
+		// printf("%i\n",k);
+		// printf("%i\n",4*(k-1) + indexBlock);
+		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[4*(k-1) + indexBlock]  );
+		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[0]  );
+
+		AES_ecb_decrypt_blks_512(ta.ta512,k,&keys_decrypt_512);
+
+
+
+		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[0]  );
+		// exit(1);
+		if (remaining) {
+			--k;
+
+			ta.ta128[4*(k) + indexBlock] = _mm_xor_si128( ta.ta128[4*(k) + indexBlock], tmp512.bl128[indexBlock]);
+
+			delta.deltak128[4*(k) + indexBlock] = zero_block();
+
+			ptp[k] = xor_block_512(delta.deltak512[k], ta.ta512[k]);
+			checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[k]);
+
+			// imprimiArreglo2(16,(unsigned char *)&ptp[k]  );
+		}
+
+		switch (k) {
+			#if (BPI == 8)
+			case 7:
+					ptp[6] = xor_block_512(delta.deltak512[6], ta.ta512[6]);
+					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[6]);
+					break;
+			case 6:
+					ptp[5] = xor_block_512(delta.deltak512[5], ta.ta512[5]);
+					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[5]);
+					break;
+			case 5:
+					ptp[4] = xor_block_512(delta.deltak512[4], ta.ta512[4]);
+					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[4]);
+					break;
+			case 4:
+					ptp[3] = xor_block_512(delta.deltak512[3], ta.ta512[3]);
+					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[3]);
+					break;
+			#endif
+			case 3:
+					ptp[2] = xor_block_512(delta.deltak512[2], ta.ta512[2]);
+					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[2]);
+					break;
+			case 2:
+					ptp[1] = xor_block_512(delta.deltak512[1], ta.ta512[1]);
+					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[1]);
+					break;
+			case 1:
+					ptp[0] = xor_block_512(delta.deltak512[0], ta.ta512[0]);
+					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[0]);
+					// imprimiArreglo2(16,(unsigned char *)&ptp[0]  );
+
+
+					break;
+		}
+
+
+
+
+        __m128i checksumFinal  = _mm_setzero_si128();
+        i=0;
+
+        while( temp_len>0 && i<4){
+            checksumFinal =  _mm_xor_si128( checksumFinal, checksum.checksum128[i]);
+            temp_len = temp_len-16;
+            i++;
+        }
+		// imprimiArreglo2(16,(unsigned char *)&checksumFinal  );
+
+		tmp512.bl=ctx->nonces[index];
+        block nonce128 = tmp512.bl128[index];
+		//  _mm_loadu_si128(&((__m128i*)&ctx->nonces[index])[0]);
+
+        int index_nonce_checksum =ctx->blocks_processed%4;
+        block add3;
+		if(index_nonce_checksum==0)
+			add3 = _mm_set_epi32 (0x03, 0x03, 0x03, 0x03);
+		else
+			add3 = _mm_set_epi32 (-1, -1, -1, -1);
+
+
+		// imprimiArreglo2(16,(unsigned char *)&add_nonce.bl128[index_nonce_checksum]  );
+
+        add_nonce.bl128[index_nonce_checksum] = _mm_add_epi32 (add_nonce.bl128[index_nonce_checksum], add3);
+
+		// imprimiArreglo2(16,(unsigned char *)&add_nonce.bl128[index_nonce_checksum]  );
+		// imprimiArreglo2(16,(unsigned char *)&nonce128 );
+
+        nonce128 = _mm_add_epi32 (nonce128, add_nonce.bl128[index_nonce_checksum]);
+        nonce128 =  swap_if_le(nonce128);
+
+		// imprimiArreglo2(16,(unsigned char *)&nonce128  );
+
+
+        AES_ecb_encrypt_blks_ROUNDS(&nonce128, 1, &ctx->encrypt_key ,AES_ROUNDS);
+		// imprimiArreglo2(16,(unsigned char *)&nonce128  );
+
+        checksumFinal = xor_block(nonce128, checksumFinal);           /* Part of tag gen */
+
+
+		AES_ecb_encrypt_blks(&checksumFinal,1,&ctx->encrypt_key);
+		offset = xor_block(checksumFinal, ctx->ad_checksum);   /* Part of tag gen */
+		// imprimiArreglo2(16,(unsigned char *)&offset );
+
+		 if (tag) {
+			#if (OCB_TAG_LEN == 16)
+            	*(block *)tag = offset;
+			#elif (OCB_TAG_LEN > 0)
+	            memcpy((char *)tag, &offset, OCB_TAG_LEN);
+			#else
+	            memcpy((char *)tag, &offset, ctx->tag_len);
+	        #endif
+        } else {
+			#if (OCB_TAG_LEN > 0)
+	            memcpy((char *)ct + ct_len, &offset, OCB_TAG_LEN);
+            	ct_len += OCB_TAG_LEN;
+			#else
+	            memcpy((char *)ct + pt_len, &offset, ctx->tag_len);
+            	pt_len += ctx->tag_len;
+	        #endif
+        }
+
+        // if ((OCB_TAG_LEN == 16) && tag) {
+		// 	if (unequal_blocks(offset, *(block *)tag))
+		// 		ct_len = AE_INVALID;
+		// } else {
+		// 	#if (OCB_TAG_LEN > 0)
+		// 		int len = OCB_TAG_LEN;
+		// 	#else
+		// 		int len = ctx->tag_len;
+		// 	#endif
+		// 	if (tag) {
+		// 		if (constant_time_memcmp(tag,tmp.u8,len) != 0)
+		// 			ct_len = AE_INVALID;
+		// 	} else {
+		// 		if (constant_time_memcmp((char *)ct + ct_len,tmp.u8,len) != 0)
+		// 			ct_len = AE_INVALID;
+		// 	}
+		// }
+    }
+
     return ct_len;
  }
 
