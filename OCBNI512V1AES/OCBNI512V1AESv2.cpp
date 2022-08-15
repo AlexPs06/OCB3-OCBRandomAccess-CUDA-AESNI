@@ -603,7 +603,7 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int pt_len
     return AE_SUCCESS;
 }
 
-static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 keys512)
+static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 keys512, block512 *bloques512)
 {
     unsigned i;
     block add1 = _mm_set_epi8 (
@@ -612,26 +612,28 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 ke
         0x00, 0x00, 0x00, 0x01,
         0x00, 0x00, 0x00, 0x01
     );
-	const unsigned int lenght  = (ctx->num_of_nonces/4)+1;
-    block512 bloques512[ctx->num_of_nonces+4];
-    block512 bloques512temp[lenght];
+	const unsigned int lenght  = (ctx->num_of_nonces)+1;
+    // block512 bloques512[ctx->num_of_nonces+4];
 
     block *tmp_blk = (block *)nonce;
+	
+	AES_ecb_encrypt_blks(tmp_blk,1,&ctx->encrypt_key);
+
     union {block bl128[4]; block512 bl512;} noncetemp;
     union {block bl128[4]; block512 bl512;} add_nonce;
 
+
 	block512 add4 = _mm512_set_epi32 (
-        0x04, 0x04, 0x04, 0x04,
-        0x04, 0x04, 0x04, 0x04,
-        0x04, 0x04, 0x04, 0x04,
-        0x04, 0x04, 0x04, 0x04
+        0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01
     );
 	add_nonce.bl512 = _mm512_set_epi32 (
-        0x03, 0x03, 0x03, 0x03,
-        0x02, 0x02, 0x02, 0x02,
-        0x01, 0x01, 0x01, 0x01,
-        0x00, 0x00, 0x00, 0x00
-
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00 
     );
 	
     tmp_blk[0] = swap_if_le(tmp_blk[0]);
@@ -639,29 +641,18 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 ke
 	noncetemp.bl128[1] = tmp_blk[0];
 	noncetemp.bl128[2] = tmp_blk[0];
 	noncetemp.bl128[3] = tmp_blk[0];
-
-    noncetemp.bl512 =_mm512_add_epi32(noncetemp.bl512,add_nonce.bl512);
+    // noncetemp.bl512 =_mm512_add_epi32(noncetemp.bl512,add_nonce.bl512);
     for(i = 0; i<lenght; i++ ){
-        bloques512temp[i] = swap_if_le512(noncetemp.bl512);
+        bloques512[i] = swap_if_le512(noncetemp.bl512);
+		// imprimiArreglo2(64,(unsigned char * )&bloques512[i]);
         noncetemp.bl512=_mm512_add_epi32(noncetemp.bl512,add4);
     }
-    AES_ecb_encrypt_blks_512(bloques512temp, lenght, &keys512);
-	
-	int k=0;
-    for(i = 0; i<lenght; i++ ){
-        noncetemp.bl512 = swap_if_le512V2(bloques512temp[i]);
-		for (int j = 0; j < 4; j++){
-			add_nonce.bl128[0] = noncetemp.bl128[j];
-			add_nonce.bl128[1] = noncetemp.bl128[j];
-			add_nonce.bl128[2] = noncetemp.bl128[j];
-			add_nonce.bl128[3] = noncetemp.bl128[j];
-			// bloques512[k] = swap_if_le512(add_nonce.bl512);
-			k++;
-		}
-    }
-	
+    AES_ecb_encrypt_blks_512(bloques512, lenght, &keys512);
 
-    ctx->nonces= bloques512;
+	for(i = 0; i<lenght; i++ ){
+        bloques512[i] = swap_if_le512(bloques512[i]);
+		// imprimiArreglo2(64,(unsigned char * )&bloques512[i]);
+    }
 }
 
 static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
@@ -838,7 +829,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 	// 	return 0;
 	// }
 	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
-
 	union { uint32_t u32[16]; uint8_t u8[64] = {0,} ; block512 bl; block bl128[4]; } tmp512;
     union {block512  checksum512; block checksum128[4];} checksum;
     union {block bl128[4]; block512 bl512;} add_nonce;
@@ -850,14 +840,17 @@ int ae_encrypt(ae_ctx     *  ctx,
     const block * ptp128 = (block *)pt;
     block512       * ctp = (block512 *)ct;
     const block512 * ptp = (block512 *)pt;
-    AES_KEY_512 keys512 =  AES_cast_128_to_512_key2(&ctx->encrypt_key);
+
+	block512 nonces[ctx->num_of_nonces+1];
+	// const int x = ctx->num_of_nonces+4;
+    // union {block bl128[4]; block512 bl512[ctx->num_of_nonces+4];} nonces;
+    
+	AES_KEY_512 keys512 =  AES_cast_128_to_512_key2(&ctx->encrypt_key);
 
     /* Non-null nonce means start of new message, init per-message values */
-	// imprimiArreglo2(16, (unsigned char *)&nonce);
 
     if (nonce) {
-        gen_offset_from_nonce(ctx, nonce, keys512);
-
+        gen_offset_from_nonce(ctx, nonce, keys512, nonces);
         // ctx->checksum   = zero_block_512();
         ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         // if (ad_len >= 0)
@@ -867,10 +860,37 @@ int ae_encrypt(ae_ctx     *  ctx,
 	if (ad_len > 0)
 		process_ad(ctx, ad, ad_len, final);
 
-	/* Encrypt plaintext data BPI blocks at a time */
 
+	#if AES_ROUNDS == 2
 
+		AES_KEY_512 keys512_two_round;
+		AES_KEY keys_two_round;
+		
+		union {block bl128[8]; block512 bl512[2];} two_keys; 
 
+		two_keys.bl512[0] = _mm512_set_epi32(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+		two_keys.bl512[1] = _mm512_set_epi32(0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1);
+
+		AES_ecb_encrypt_blks_512(two_keys.bl512, 2, &keys512); 
+
+		keys512_two_round.rd_key[1]=two_keys.bl512[0];
+		keys512_two_round.rd_key[2]=two_keys.bl512[1];
+		
+		keys_two_round.rd_key[1]=two_keys.bl128[0];  
+		keys_two_round.rd_key[2]=two_keys.bl128[4];  
+	#else
+		AES_KEY_512 keys512_two_round;
+		AES_KEY keys_two_round;
+		
+		union {block bl128[4]; block512 bl512[1];} two_keys; 
+
+		two_keys.bl512[0] = _mm512_set_epi32(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+
+		AES_ecb_encrypt_blks_512(two_keys.bl512, 1, &keys512); 
+
+		keys512_two_round.rd_key[1]=two_keys.bl512[0];
+		keys_two_round.rd_key[1]=two_keys.bl128[0];  
+	#endif
 
     add_nonce.bl512 = _mm512_set_epi16 (
         0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
@@ -889,9 +909,9 @@ int ae_encrypt(ae_ctx     *  ctx,
     long long int index=0;
     checksum.checksum512  = zero_block_512();
     i = pt_len/(BPI*64);
-	// printf("%i\n", AES_ROUNDS);
-	// ctx->nonces[index]=swap_if_le512(ctx->nonces[index]);
-	// ctx->nonces[index]=swap_if_le512(ctx->nonces[index]);
+
+	/* Encrypt plaintext data BPI blocks at a time */
+
 	long long int cosa = 0;
     if (i) {
         block512 ta[BPI];
@@ -900,17 +920,12 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 		do {
             for(int j = 0; j<BPI; j++){
-               delta[j] = _mm512_add_epi16 (ctx->nonces[index],add_nonce.bl512);
-			//    imprimiArreglo2(32,(unsigned char *)&add_nonce.bl512);
+               delta[j] = _mm512_add_epi16 (nonces[index],add_nonce.bl512);
                add_nonce.bl512=_mm512_add_epi16 (add4,add_nonce.bl512);
                delta[j]=swap_if_le512(delta[j]);
             }
-			// printf("%lli\n", ctx->num_of_nonces);
-			// for(int j = 0; j<BPI; j++ ){
-			// 	imprimiArreglo2(32,(unsigned char *)&delta[j]);
-			// }
 
-            AES_ecb_encrypt_blks_512_ROUNDS(delta, BPI, &keys512,AES_ROUNDS);
+            AES_ecb_encrypt_blks_512_ROUNDS(delta, BPI, &keys512_two_round,AES_ROUNDS);
 
             for(int j = 0; j<BPI; j++){
 			    ta[j] = xor_block_512(delta[j], ptp[j]);
@@ -928,11 +943,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 			ctp += BPI;
             block_num+=32;
 			cosa++;
-			// if (block_num%64==0){
-			// 	index++;
-			// 	// printf("%lli\n",index);
-			// 	ctx->nonces[index]=swap_if_le512(ctx->nonces[index]);
-			// }
+			
 			
 		} while (--i);
 
@@ -955,7 +966,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 				for(int j = 0; j<4; j++){
 			    	checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[j]);
 
-					delta.deltak512[j] = _mm512_add_epi16 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[j] = _mm512_add_epi16 (nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi16 (add4,add_nonce.bl512);
 					delta.deltak512[j]=swap_if_le512(delta.deltak512[j]);
             	}
@@ -968,7 +979,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 				for(int j = k; j<k+2; j++){
 			    	checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[j]);
-					delta.deltak512[j] = _mm512_add_epi16 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[j] = _mm512_add_epi16 (nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi16 (add4,add_nonce.bl512);
 					delta.deltak512[j]=swap_if_le512(delta.deltak512[j]);
             	}
@@ -979,7 +990,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 			}
 			if (remaining >= 64) {
 			    checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[k]);
-				delta.deltak512[k] = _mm512_add_epi16 (ctx->nonces[index],add_nonce.bl512);
+				delta.deltak512[k] = _mm512_add_epi16 (nonces[index],add_nonce.bl512);
 				add_nonce.bl512=_mm512_add_epi16 (add4,add_nonce.bl512);
 				delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 				block_num += 4;
@@ -993,12 +1004,12 @@ int ae_encrypt(ae_ctx     *  ctx,
 			    	checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[k]);
 					remaining=remaining-remaining;
 
-					delta.deltak512[k] = _mm512_add_epi16 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[k] = _mm512_add_epi16 (nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi16 (add4,add_nonce.bl512);
 					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 				}
 				else{
-					delta.deltak512[k] = _mm512_add_epi16 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[k] = _mm512_add_epi16 (nonces[index],add_nonce.bl512);
 
 					block_num = block_num  + ceil(remaining/16)+1;
 
@@ -1008,8 +1019,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 					add_nonce.bl512=_mm512_add_epi16 (add4,add_nonce.bl512);
 					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
-
-
 
 					ALIGN(16) unsigned char temp[16]={0,};
 					temp[remaining%16]=1;
@@ -1028,7 +1037,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 		// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
 
-		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys512,AES_ROUNDS);
+		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys512_two_round,AES_ROUNDS);
 
 		for(int j = 0; j<k; j++){
 			ta.ta512[j] = xor_block_512(delta.deltak512[j], ptp[j]);
@@ -1038,7 +1047,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 			ta.ta128[4*(k-1) + indexBlock] = delta.deltak128[4*(k-1) + indexBlock];
 		}
 		
-
 		AES_ecb_encrypt_blks_512(ta.ta512,k,&keys512);
 
 		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[0]  );
@@ -1075,7 +1083,7 @@ int ae_encrypt(ae_ctx     *  ctx,
             temp_len = temp_len-16;
             i++;
         }
-		tmp512.bl=ctx->nonces[index];
+		tmp512.bl=nonces[index];
         block nonce128 = tmp512.bl128[0];
 
         int index_nonce_checksum =ctx->blocks_processed%4;
@@ -1088,13 +1096,16 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 
         add_nonce.bl128[index_nonce_checksum] = _mm_add_epi16 (add_nonce.bl128[index_nonce_checksum], add3);
-
+		
 		// imprimiArreglo2(16,(unsigned char *)&add_nonce.bl128[index_nonce_checksum]  );
-        nonce128 = _mm_add_epi16 (nonce128, add_nonce.bl128[index_nonce_checksum]);
+		// imprimiArreglo2(16,(unsigned char *)&nonce128);
+        
+		nonce128 = _mm_add_epi16 (nonce128, add_nonce.bl128[index_nonce_checksum]);
         
 		nonce128 =  swap_if_le(nonce128);
 
-        AES_ecb_encrypt_blks_ROUNDS(&nonce128, 1, &ctx->encrypt_key ,AES_ROUNDS);
+
+        AES_ecb_encrypt_blks_ROUNDS(&nonce128, 1, &keys_two_round ,AES_ROUNDS);
 
         checksumFinal = xor_block(nonce128, checksumFinal);           /* Part of tag gen */
 
@@ -1156,9 +1167,6 @@ int ae_decrypt(ae_ctx     *ctx,
                const void *tag,
                int         final)
 {
-	// if(pt_len==0){
-	// 	return 0;
-	// }
 	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
 
 	union { uint32_t u32[16]; uint8_t u8[64] = {0,} ; block512 bl; block bl128[4]; } tmp512;
@@ -1174,10 +1182,10 @@ int ae_decrypt(ae_ctx     *ctx,
     block512 * ptp = (block512 *)pt;
 	AES_KEY_512 keys_encrypt_512 =  AES_cast_128_to_512_key2(&ctx->encrypt_key);
     AES_KEY_512 keys_decrypt_512 =  AES_cast_128_to_512_key2(&ctx->decrypt_key);
-
+	block512 nonces[ctx->num_of_nonces+4];
     /* Non-null nonce means start of new message, init per-message values */
     if (nonce) {
-        gen_offset_from_nonce(ctx, nonce, keys_encrypt_512);
+        gen_offset_from_nonce(ctx, nonce, keys_encrypt_512,nonces);
         // ctx->checksum   = zero_block_512();
         ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         // if (ad_len >= 0)
@@ -1215,9 +1223,9 @@ int ae_decrypt(ae_ctx     *ctx,
     checksum.checksum512  = zero_block_512();
     i = ct_len/(BPI*64);
 
-	// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
+	// imprimiArreglo2(16,(unsigned char *)&nonces[index]);
 
-	ctx->nonces[index]=swap_if_le512(ctx->nonces[index]);
+	nonces[index]=swap_if_le512(nonces[index]);
     if (i) {
         block512 ta[BPI];
         block512 delta[BPI];
@@ -1225,7 +1233,7 @@ int ae_decrypt(ae_ctx     *ctx,
 
 		do {
             for(int j = 0; j<BPI; j++){
-               delta[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+               delta[j] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
                add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
                delta[j]=swap_if_le512(delta[j]);
             }
@@ -1269,7 +1277,7 @@ int ae_decrypt(ae_ctx     *ctx,
 			if (remaining >= 256) {
 				for(int j = 0; j<4; j++){
 
-					delta.deltak512[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[j] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 					delta.deltak512[j]=swap_if_le512(delta.deltak512[j]);
             	}
@@ -1281,7 +1289,7 @@ int ae_decrypt(ae_ctx     *ctx,
 			if (remaining >= 128) {
 
 				for(int j = k; j<k+2; j++){
-					delta.deltak512[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[j] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 					delta.deltak512[j]=swap_if_le512(delta.deltak512[j]);
             	}
@@ -1291,7 +1299,7 @@ int ae_decrypt(ae_ctx     *ctx,
 				block_num += 8;
 			}
 			if (remaining >= 64) {
-				delta.deltak512[k] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+				delta.deltak512[k] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
 				add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 				delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 				block_num += 4;
@@ -1307,13 +1315,13 @@ int ae_decrypt(ae_ctx     *ctx,
 					remaining=remaining-remaining;
 
 
-					delta.deltak512[k] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[k] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 
 				}
 				else{
-					delta.deltak512[k] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+					delta.deltak512[k] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
 
 					block_num = block_num  + ceil(remaining/16)+1;
 
@@ -1343,16 +1351,16 @@ int ae_decrypt(ae_ctx     *ctx,
 
 		// for(int j = 0; j<k; j++){
 
-		// 	delta[j] = _mm512_add_epi32 (ctx->nonces[index],add_nonce.bl512);
+		// 	delta[j] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
 
 		// 	add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 
 		// 	delta[j]=swap_if_le512(delta[j]);
         // }
 		// imprimiArreglo2(16,(unsigned char *)&delta.deltak512);
-		// ctx->nonces[index] =swap_if_le512(ctx->nonces[index]);
+		// nonces[index] =swap_if_le512(nonces[index]);
 
-		// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
+		// imprimiArreglo2(16,(unsigned char *)&nonces[index]);
 
 		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys_encrypt_512,AES_ROUNDS);
 
@@ -1437,9 +1445,9 @@ int ae_decrypt(ae_ctx     *ctx,
         }
 		// imprimiArreglo2(16,(unsigned char *)&checksumFinal  );
 
-		tmp512.bl=ctx->nonces[index];
+		tmp512.bl=nonces[index];
         block nonce128 = tmp512.bl128[index];
-		//  _mm_loadu_si128(&((__m128i*)&ctx->nonces[index])[0]);
+		//  _mm_loadu_si128(&((__m128i*)&nonces[index])[0]);
 
         int index_nonce_checksum =ctx->blocks_processed%4;
         block add3;
