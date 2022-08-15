@@ -24,7 +24,7 @@ int main(int argc, char **argv)
 	ALIGN(16) char tag[16];
 	ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
 	ALIGN(16) unsigned char nonce[] = "abcdefghijklmnop";
-	char outbuf[MAX_ITER*15+1024];
+	char outbuf[MAX_ITER*15+1024+4096];
 	int iter_list[2048]; /* Populate w/ test lengths, -1 terminated */
 	ae_ctx* ctx = ae_allocate(NULL);
 	char *outp = outbuf;

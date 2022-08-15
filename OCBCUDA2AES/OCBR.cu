@@ -17,7 +17,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 #include<math.h>
 using namespace std;
 namespace cg = cooperative_groups;
-#define NumberBlocks 32
+#define NumberBlocks 30
 #define NumnerThreads 256
 #define L_TABLE_SZ 64;
 #define OCB_TAG_LEN 16;
