@@ -1,13 +1,11 @@
 CC=nvcc
-CFLAGS=-rdc=true
-# -gencode arch=compute_80,code=sm_80
-LIB= 
-# -lineinfo -lcudadevrt 
-# -rdc=true
+CFLAGS= -O3 -gencode arch=compute_61,code=sm_61
+LIB=
 SOURCES= OCB3.cu
 EXECNAME=OCB3
+
 all: 
-	$(CC) -o $(EXECNAME) $(SOURCES) $(LIB) $(CFLAGS) 
+	$(CC) $(SOURCES) -o $(EXECNAME)  $(LIB) $(CFLAGS) 
 
 clean: 
 	rm *.o 

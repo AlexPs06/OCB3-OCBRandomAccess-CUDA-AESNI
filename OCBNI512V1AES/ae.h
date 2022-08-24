@@ -76,7 +76,7 @@ int ae_init(ae_ctx     *ctx,
             const void *key,
             int         key_len,
             int         nonce_len,
-            int         pt_len,
+            unsigned long long int         pt_len,
             int         tag_len);
 /* --------------------------------------------------------------------------
  *

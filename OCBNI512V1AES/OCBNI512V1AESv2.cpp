@@ -560,8 +560,9 @@ int ae_ctx_sizeof(void) { return (int) sizeof(ae_ctx); }
 
 /* ----------------------------------------------------------------------- */
 
-int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int pt_len,int tag_len)
+int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, unsigned long long int pt_len,int tag_len)
 {
+	
     unsigned i;
     block tmp_blk;
     if (nonce_len != 12)
@@ -578,16 +579,19 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int pt_len
     #else
     AES_set_decrypt_key((unsigned char *)key, (int)(key_len*8), &ctx->decrypt_key);
     #endif
-    int num_blocks = 0;
-    long long int deltasize = 0;
+    unsigned long long int num_blocks = 0;
+    unsigned long long int deltasize = 0;
     #if AES_ROUNDS == 2
         num_blocks = pt_len/16;
         deltasize= pow(2,30);
         ctx->num_of_nonces = ceil(num_blocks/ deltasize);
     #else
+
         num_blocks = pt_len/16;
         deltasize= pow(2,6);
         ctx->num_of_nonces = ceil(num_blocks/ deltasize);
+		
+
     #endif
 
     if(pt_len!=0 && ctx->num_of_nonces ==0){
@@ -605,14 +609,14 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int pt_len
 
 static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 keys512, block512 *bloques512)
 {
-    unsigned i;
+    unsigned long long  int i;
     block add1 = _mm_set_epi8 (
         0x00, 0x00, 0x00, 0x01,
         0x00, 0x00, 0x00, 0x01,
         0x00, 0x00, 0x00, 0x01,
         0x00, 0x00, 0x00, 0x01
     );
-	const unsigned int lenght  = (ctx->num_of_nonces)+1;
+	const unsigned long long  int lenght  = (ctx->num_of_nonces)+1;
     // block512 bloques512[ctx->num_of_nonces+4];
 
     block *tmp_blk = (block *)nonce;
@@ -622,6 +626,7 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 ke
     union {block bl128[4]; block512 bl512;} noncetemp;
     union {block bl128[4]; block512 bl512;} add_nonce;
 
+	
 
 	block512 add4 = _mm512_set_epi32 (
         0x01, 0x01, 0x01, 0x01,
@@ -642,17 +647,27 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 ke
 	noncetemp.bl128[2] = tmp_blk[0];
 	noncetemp.bl128[3] = tmp_blk[0];
     // noncetemp.bl512 =_mm512_add_epi32(noncetemp.bl512,add_nonce.bl512);
+
+
     for(i = 0; i<lenght; i++ ){
+		// printf("%lli\n",i );
+
         bloques512[i] = swap_if_le512(noncetemp.bl512);
 		// imprimiArreglo2(64,(unsigned char * )&bloques512[i]);
         noncetemp.bl512=_mm512_add_epi32(noncetemp.bl512,add4);
+		// printf("%lli\n",i );
+
     }
+	// printf("llegue\n");
+	// printf("%lli\n",ctx->num_of_nonces+1 );
     AES_ecb_encrypt_blks_512(bloques512, lenght, &keys512);
+	
 
 	for(i = 0; i<lenght; i++ ){
         bloques512[i] = swap_if_le512(bloques512[i]);
 		// imprimiArreglo2(64,(unsigned char * )&bloques512[i]);
     }
+	
 }
 
 static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
@@ -815,6 +830,9 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 
 /* ----------------------------------------------------------------------- */
 
+
+block512 nonces[4194304];
+
 int ae_encrypt(ae_ctx     *  ctx,
                const void *  nonce,
                const void *pt,
@@ -828,6 +846,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 	// if(pt_len==0){
 	// 	return 0;
 	// }
+
 	union { uint32_t u32[4]; uint8_t u8[16]; block bl; } tmp;
 	union { uint32_t u32[16]; uint8_t u8[64] = {0,} ; block512 bl; block bl128[4]; } tmp512;
     union {block512  checksum512; block checksum128[4];} checksum;
@@ -841,7 +860,10 @@ int ae_encrypt(ae_ctx     *  ctx,
     block512       * ctp = (block512 *)ct;
     const block512 * ptp = (block512 *)pt;
 
-	block512 nonces[ctx->num_of_nonces+1];
+	
+
+	// block512 * nonces = (block512 *) malloc((ctx->num_of_nonces+1) * sizeof(block512));
+	
 	// const int x = ctx->num_of_nonces+4;
     // union {block bl128[4]; block512 bl512[ctx->num_of_nonces+4];} nonces;
     
@@ -851,7 +873,9 @@ int ae_encrypt(ae_ctx     *  ctx,
 
     if (nonce) {
         gen_offset_from_nonce(ctx, nonce, keys512, nonces);
+		
         // ctx->checksum   = zero_block_512();
+
         ctx->ad_blocks_processed = ctx->blocks_processed    = 0;
         // if (ad_len >= 0)
         // 	ctx->ad_checksum = zero_block_512();
@@ -860,6 +884,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 	if (ad_len > 0)
 		process_ad(ctx, ad, ad_len, final);
 
+	
 
 	#if AES_ROUNDS == 2
 
@@ -909,9 +934,9 @@ int ae_encrypt(ae_ctx     *  ctx,
     long long int index=0;
     checksum.checksum512  = zero_block_512();
     i = pt_len/(BPI*64);
-
+	
 	/* Encrypt plaintext data BPI blocks at a time */
-
+	
 	long long int cosa = 0;
     if (i) {
         block512 ta[BPI];
@@ -949,7 +974,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 
 	    ctx->blocks_processed = block_num;
     }
-
+	
     if (final) {
 
 		union {block ta128[4*BPI]; block512 ta512[BPI];} ta;
@@ -1038,7 +1063,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 		// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
 
 		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys512_two_round,AES_ROUNDS);
-
+		
 		for(int j = 0; j<k; j++){
 			ta.ta512[j] = xor_block_512(delta.deltak512[j], ptp[j]);
 		}
@@ -1073,7 +1098,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 			case 1: ctp[0] = xor_block_512(delta.deltak512[0], ta.ta512[0]);
 		}
 
-
+		
 
         __m128i checksumFinal  = _mm_setzero_si128();
         i=0;
@@ -1130,6 +1155,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 	        #endif
         }
     }
+	
     return (int) pt_len;
 }
 

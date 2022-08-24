@@ -558,7 +558,7 @@ int ae_ctx_sizeof(void) { return (int) sizeof(ae_ctx); }
 
 /* ----------------------------------------------------------------------- */
 
-int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int pt_len,int tag_len)
+int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, unsigned long long int pt_len,int tag_len)
 {
     unsigned i;
     block tmp_blk;
@@ -886,14 +886,17 @@ int ae_encrypt(ae_ctx     *  ctx,
 		
 		union {block bl128[8]; block512 bl512[2];} two_keys; 
 
-		two_keys.bl512[0] = _mm512_set_epi32(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
-		two_keys.bl512[1] = _mm512_set_epi32(0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1);
+		two_keys.bl512[0] = _mm512_set_epi32(0,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2);
+		two_keys.bl512[1] = _mm512_set_epi32(0,0,0,3,0,0,0,3,0,0,0,3,0,0,0,3);
 
+		
 		AES_ecb_encrypt_blks_512(two_keys.bl512, 2, &keys512); 
 
 		keys512_two_round.rd_key[1]=two_keys.bl512[0];
 		keys512_two_round.rd_key[2]=two_keys.bl512[1];
 		
+		
+
 		keys_two_round.rd_key[1]=two_keys.bl128[0];  
 		keys_two_round.rd_key[2]=two_keys.bl128[4];  
 	#else
@@ -959,17 +962,28 @@ int ae_encrypt(ae_ctx     *  ctx,
                add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
                delta[j]=swap_if_le512(delta[j]);
             }
+			// imprimiArreglo2(64, (unsigned char *)&two_keys.bl512[0]);
+			// imprimiArreglo2(64, (unsigned char *)&delta[7]);
 
             AES_ecb_encrypt_blks_512_ROUNDS(delta, BPI, &keys512_two_round, AES_ROUNDS_2);
-            for(int j = 0; j<BPI; j++){
+			// imprimiArreglo2(64, (unsigned char *)&delta[7]);
+            
+			for(int j = 0; j<BPI; j++){
 			    ta[j] = xor_block_512(delta[j], ptp[j]);
 			    checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[j]);
             }
+			// imprimiArreglo2(64, (unsigned char *)&ta[7]);
+
 
 			AES_ecb_encrypt_blks_512(ta,BPI,&keys512);
+
+			// imprimiArreglo2(64, (unsigned char *)&ta[7]);
+
             for(int j = 0; j<BPI; j++){
                 ctp[j]= xor_block_512(ta[j], delta[j]);
             }
+			// imprimiArreglo2(64, (unsigned char *)&ctp[7]);
+
 
             ptp += BPI;
 			ctp += BPI;
@@ -1067,7 +1081,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 		}
 
 		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys512_two_round, AES_ROUNDS);
-
+		
 		for(int j = 0; j<k; j++){
 			ta.ta512[j] = xor_block_512(delta.deltak512[j], ptp[j]);
 		}

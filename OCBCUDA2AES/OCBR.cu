@@ -31,7 +31,9 @@ namespace cg = cooperative_groups;
 #define unequal_blocks(x,y) \
     					   (_mm_movemask_epi8(_mm_cmpeq_epi8(x,y)) != 0xffff)
 
-double total_time=0;
+double CPU_time=0;
+double cuda_funcion_time_=0;
+double cuda_memcopy_time =0;
 
 typedef __m128i block;
 typedef struct { unsigned int keys[11][4]; int round; } AES_KEY;
@@ -102,6 +104,8 @@ ae_ctx* ae_allocate(void *misc)
 
 int ae_init(ae_ctx *ctx, const unsigned char *k, int key_len, int nonce_len, int tag_len)
 {
+    clock_t time;
+    time = clock();
     if (nonce_len != 12)
     	return 0;//AE_NOT_SUPPORTED
     /* Initialize encryption & decryption keys */
@@ -126,8 +130,12 @@ int ae_init(ae_ctx *ctx, const unsigned char *k, int key_len, int nonce_len, int
     tmp_aes_block[2].block[2] = 0x0;
     tmp_aes_block[2].block[3] = 0x0;
 
+    time = clock() - time ;
+    CPU_time += time/(double)CLOCKS_PER_SEC;
+    
     AES128Encrypt(tmp_aes_block, 3, &ctx->encrypt_key.keys[0][0]);
     
+    time = clock();
     ctx->RandomAcces_key.keys[0][0] = tmp_aes_block[0].block[0];
     ctx->RandomAcces_key.keys[0][1] = tmp_aes_block[0].block[1];
     ctx->RandomAcces_key.keys[0][2] = tmp_aes_block[0].block[2];
@@ -146,6 +154,8 @@ int ae_init(ae_ctx *ctx, const unsigned char *k, int key_len, int nonce_len, int
    
     ctx->tag_len = tag_len;
 
+    time = clock() - time ;
+    CPU_time += time/(double)CLOCKS_PER_SEC;
 
     return 1; //AE_SUCCESS;
 }
@@ -1183,6 +1193,14 @@ __global__ void Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys
 
 
 void AES128Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys){
+    
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    float milliseconds = 0;
+    
+
+    cudaEventRecord(start);
     aesBlock *mCuda;
     unsigned int *keysCuda;
 
@@ -1191,16 +1209,37 @@ void AES128Encrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys){
 
     cudaMalloc(&mCuda, sizeMessage);
     cudaMalloc(&keysCuda, sizeKeys);
-
     cudaMemcpy(mCuda,m,sizeMessage,cudaMemcpyDefault);
     cudaMemcpy(keysCuda,keys,sizeKeys,cudaMemcpyDefault);
+
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    
+    cuda_memcopy_time+=milliseconds;
 
     dim3 nb( NumberBlocks ) ;
     dim3 nt(NumnerThreads);
 
+    cudaEventRecord(start);
+
     Encrypt<<<nb, nt>>>(mCuda, mlen,keysCuda);
 
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cuda_funcion_time_+=milliseconds;
+
+
+    cudaEventRecord(start);
+
     cudaMemcpy(m, mCuda, sizeMessage, cudaMemcpyDefault);
+
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    
+    cuda_memcopy_time+=milliseconds;
 
     cudaFree(mCuda); cudaFree(keysCuda);
 }
@@ -1413,6 +1452,14 @@ __global__ void OCB128DecryptRandomAcces(aesBlock *m, aesBlock *result, aesBlock
 }
 
 void OCBRandomAccess(aesBlock *m,aesBlock *delta, aesBlock *S, unsigned long long message_len, const unsigned long long mlenReal, unsigned long long deltalen, unsigned int *keys, unsigned int *decrypt_keys,unsigned int *RandomAcces_keys, int encrypt){
+    
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    float milliseconds = 0;
+    
+    cudaEventRecord(start);
+
     aesBlock *mCuda;
     aesBlock *resultCuda;
     aesBlock *SCuda;
@@ -1424,6 +1471,7 @@ void OCBRandomAccess(aesBlock *m,aesBlock *delta, aesBlock *S, unsigned long lon
     int sizeDelta = (deltalen)*sizeof(class aesBlock);
     int sizeS = sizeof(class aesBlock);
     int sizeKeys = 11*4*sizeof(unsigned int);
+
 
     cudaMalloc(&mCuda, sizeMessage);
     cudaMalloc(&resultCuda, sizeMessage);
@@ -1441,14 +1489,20 @@ void OCBRandomAccess(aesBlock *m,aesBlock *delta, aesBlock *S, unsigned long lon
     
     cudaMemcpy(decrypt_keysCuda,decrypt_keys,sizeKeys,cudaMemcpyDefault);
     cudaMemcpy(SCuda,S,sizeS,cudaMemcpyDefault);
-    // printf("%f \n", ceil( (mlen+1)/4.0 ));
 
-    int device = 0;
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, device);
 
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cuda_memcopy_time+=milliseconds;
+
+
+    
+    // int device = 0;
+    // cudaDeviceProp deviceProp;
+    // cudaGetDeviceProperties(&deviceProp, device);
+    cudaEventRecord(start);
     void *kernelArgs[] = { (void *)&mCuda,(void *)&resultCuda,(void *)&deltaCuda,(void *)&SCuda,(void *)&message_len, (void *)&mlenReal, (void *)&deltalen, (void *)&keysCuda,(void *)&RandomAcces_keysCuda};
-    // aesBlock *m, aesBlock *result, aesBlock *delta, aesBlock *S,  unsigned long long mlen,unsigned long long mlenReal, unsigned long long deltalen, unsigned int *keys
     dim3 nb(NumberBlocks,1,1) ;
     dim3 nt(NumnerThreads,1,1);
 
@@ -1460,8 +1514,19 @@ void OCBRandomAccess(aesBlock *m,aesBlock *delta, aesBlock *S, unsigned long lon
     // else
         // OCB128DecryptRandomAcces<<<nb, nt>>>(mCuda, resultCuda,deltaCuda, SCuda,message_len, mlenReal, deltalen,decrypt_keysCuda, keysCuda);
 
-    // cudaMemcpy(m, mCuda, sizeMessage, cudaMemcpyDefault);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cuda_funcion_time_+=milliseconds;
+
+    cudaEventRecord(start);
     cudaMemcpy(m, resultCuda, sizeMessage, cudaMemcpyDefault);
+
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cuda_memcopy_time+=milliseconds;
+
 
     cudaFree(SCuda);
     cudaFree(mCuda);
@@ -1475,8 +1540,10 @@ void OCBRandomAccess(aesBlock *m,aesBlock *delta, aesBlock *S, unsigned long lon
 
 
 void getDelta(const unsigned char *nsec, aesBlock* delta,unsigned int *keys,unsigned long long deltalen ){
+    clock_t time;
     // unsigned int nonce[4] = {0,};
-     aesBlock *nonce = new aesBlock[1];
+    time=clock();
+    aesBlock *nonce = new aesBlock[1];
     copyMessageToAESBlock(nonce, 1, (unsigned int *)&nsec[0]);
     
     // unsignedCharArrayTounsignedIntArray(nsec,nonce,16,16);
@@ -1487,6 +1554,9 @@ void getDelta(const unsigned char *nsec, aesBlock* delta,unsigned int *keys,unsi
                 delta[i].block[j]= nonce[i].block[j]+i;
         }
     }
+    time=clock()-time;
+    CPU_time += time/(double)CLOCKS_PER_SEC;
+
     AES128Encrypt(delta, deltalen, keys);
 
 }
@@ -1595,6 +1665,7 @@ int crypto_aead_encrypt(
     aesBlock *delta_ad = new aesBlock[ad_len_temp];
 
     time = clock() - time ;
+    CPU_time += time/(double)CLOCKS_PER_SEC;
 
     ae_init(ctx, k, 16, 12, 16);
     if (nsec) {
@@ -1604,12 +1675,22 @@ int crypto_aead_encrypt(
     if (ad_len > 0){
         process_ad(ctx, S, delta_ad,ad,  ad_len, 1);
     }
+    time = clock();
+
     copyMessageToAESBlock(message, message_len-1, (unsigned int *)&m[0]);
+
+    time = clock() - time ;
+    CPU_time += time/(double)CLOCKS_PER_SEC;
 
     OCBRandomAccess(message, delta, S, message_len, mlen, delta_len, &ctx->encrypt_key.keys[0][0], &ctx->decrypt_key.keys[0][0], &ctx->RandomAcces_key.keys[0][0], 1);
     
+    time = clock();
+    
     copyAESBlockToMessage(message, message_len, (unsigned int *)&c[0]);
     copyAESBlockToMessage(&message[message_len-1],1, (unsigned int *)&t[0]);
+     
+    time = clock() - time ;
+    CPU_time += time/(double)CLOCKS_PER_SEC;
     return 1;
 }
 
@@ -1644,7 +1725,7 @@ unsigned char m[mlen+16] ={0};
 unsigned char c[mlen+16]={0};
 
 
-unsigned char * plaintext;
+    unsigned char * plaintext;
     unsigned char * ciphertext;
     // long long int size =1000000000+16;
     // unsigned long long  size =1073741824;
@@ -1659,13 +1740,20 @@ int main(int argc, char **argv) {
         0x09, 0xcf, 0x4f, 0x3c,
 
     };
-
+    
     // unsigned long long  size =   33554432;
-    unsigned long long  size =  1073741824;
+    unsigned long long size =  1073741824;
+    size = 1048576;
+    size = 4096;
+
     plaintext = (unsigned char*) malloc((size+16) * sizeof(unsigned char));
     ciphertext = (unsigned char*) malloc((size+16) * sizeof(unsigned char));
-    read_sample(plaintext,size );
-    printf("termine de leer \n");
+    long long int  repeticiones = 100;
+    for (long long int  i = 0; i < repeticiones; i++){
+    
+    read_sample(plaintext,size);
+    // printf("termine de leer \n");
+    // printf("iteracion %i\n",i);
 
     unsigned char Tag[16] ={0,};
     unsigned long long adlen = 0;
@@ -1693,35 +1781,61 @@ int main(int argc, char **argv) {
     const unsigned char *npub;
 
     crypto_aead_encrypt(ciphertext, clen, plaintext, size, ad, adlen,Tag, nsec, npub, k);
-    cout<<"\n---------------------------Encrypt------------------------------------         \n";
+    
+    }
 
+    cout<<"\n---------------------------Time------------------------------------         \n";
     printf("\nlen: %lli\n",size);
     printf("\n---------------------------");
     cout<<endl;
 
-    cout<<"Key          ";
-    imprimiArreglo(16,k);
+    printf("\n itres: %lli\n",repeticiones);
     printf("\n---------------------------");
     cout<<endl;
 
-    cout<<"Nonce        ";
-    imprimiArreglo(16,nsec);
+    printf("\nTime CPU in seconds :  %6.10f \n",(CPU_time/(double)repeticiones) );
     printf("\n---------------------------");
     cout<<endl;
 
-    cout<<"Plaintext    ";
-    print_hex_string(plaintext,size);
+    printf("\nTime CUDA memory copy in miliseconds :  %6.10f \n",(cuda_memcopy_time/(double)repeticiones));
     printf("\n---------------------------");
     cout<<endl;
 
-    cout<<"Ciphertext   ";
-    print_hex_string(ciphertext,size);
+    printf("\nTime CUDA execute in miliseconds :  %6.10f \n",(cuda_funcion_time_/(double)repeticiones ));
     printf("\n---------------------------");
     cout<<endl;
-
-    cout<<"Tag          ";
-    imprimiArreglo(16,(unsigned char *)&Tag[0]);
+    
+    printf("\nTotal Time CUDA in seconds :  %6.10f \n", (CPU_time/(double)repeticiones) + ((cuda_funcion_time_/(double)repeticiones )/1000.0) +  ((cuda_memcopy_time/(double)repeticiones)/1000.0));
+    printf("\n---------------------------");
     cout<<endl;
+    // cout<<"\n---------------------------Encrypt------------------------------------         \n";
+    // printf("\nlen: %lli\n",size);
+    // printf("\n---------------------------");
+    // cout<<endl;
+
+    // cout<<"Key          ";
+    // imprimiArreglo(16,k);
+    // printf("\n---------------------------");
+    // cout<<endl;
+
+    // cout<<"Nonce        ";
+    // imprimiArreglo(16,nsec);
+    // printf("\n---------------------------");
+    // cout<<endl;
+
+    // cout<<"Plaintext    ";
+    // print_hex_string(plaintext,size);
+    // printf("\n---------------------------");
+    // cout<<endl;
+
+    // cout<<"Ciphertext   ";
+    // print_hex_string(ciphertext,size);
+    // printf("\n---------------------------");
+    // cout<<endl;
+
+    // cout<<"Tag          ";
+    // imprimiArreglo(16,(unsigned char *)&Tag[0]);
+    // cout<<endl;
 
 
 //     int dev = 0;

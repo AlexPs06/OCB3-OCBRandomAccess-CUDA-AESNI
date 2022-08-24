@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include "ae.h"
 
 #if __GNUC__
@@ -17,18 +19,50 @@ extern char infoString[];  /* Each AE implementation must have a global one */
 #define MAX_ITER 10
 #endif
 
+int read_sample(unsigned char * plaintext, unsigned long long  size){
+    int fd = open("/dev/urandom", O_RDONLY);
+    
+    // if(size > 1048576*16){
+    //     unsigned long long  block = (1048576*16);
+    //     unsigned long long  temp = size/block;
+    //     unsigned long long  indice = 0;
+    //     for ( unsigned long long  i = 0; i < temp; i++){
+    //         read(fd, &plaintext[indice], block);
+    //         indice=indice + block;
+    //     }
+
+    // }else{
+    //      read(fd, plaintext, size);
+    // }
+    
+    
+   
+    // close(fd);
+
+    return 1;
+} 
+
+ALIGN(64) unsigned char pt[1073741824];
+ALIGN(64) unsigned char * ciphertext;
+
 int main(int argc, char **argv)
 {
+	unsigned long long size =  1073741824;
+    // size = 1048576;
+    // size = 4096;
+    // pt =  (ALIGN(64) unsigned char*) malloc((size) * sizeof(ALIGN(64) unsigned char));
+    ciphertext = (unsigned char*) malloc((size+16) * sizeof(unsigned char));
 	/* Allocate locals */
-	ALIGN(64) char pt[4194304] = {0};
+	// ALIGN(64) char pt[4194304] = {0};
 	ALIGN(16) char tag[16];
 	ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
 	ALIGN(16) unsigned char nonce[] = "abcdefghijklmnop";
 	char outbuf[MAX_ITER*15+1024+4096];
-	int iter_list[2048]; /* Populate w/ test lengths, -1 terminated */
+	unsigned long long int iter_list[2048]; /* Populate w/ test lengths, -1 terminated */
 	ae_ctx* ctx = ae_allocate(NULL);
 	char *outp = outbuf;
-	int iters, i, j, len;
+	unsigned long long int iters, i, j;
+	long long int  len;
 	double Hz,sec;
 	double ipi=0, tmpd;
 	clock_t c;
@@ -46,6 +80,9 @@ int main(int argc, char **argv)
 	if (MAX_ITER < 1048576) iter_list[i++] = 1048576;
 	if (MAX_ITER < 2097152) iter_list[i++] = 2097152;
 	if (MAX_ITER < 4194304) iter_list[i++] = 4194304;
+	if (MAX_ITER < 4194304*4) iter_list[i++] = 4194304*4;
+	if (MAX_ITER < (4194304*4)*4) iter_list[i++] = (4194304*4)*4;
+	if (MAX_ITER < 1073741824) iter_list[i++] = 1073741824;
 	
 	iter_list[i] = -1;
 
@@ -133,14 +170,21 @@ int main(int argc, char **argv)
 	 * Get times over different lengths
 	 */
 	iters = (int)(Hz/1000);
-	printf("iteracioes -- %i\n\n",iters);fflush(stdout);
-
+	printf("iteracioes -- %lli\n\n",iters);fflush(stdout);
 	i=0;
 	len = iter_list[0];
 	double prom_time = 0;
 	while (len >= 0) {
+		// if (len == 1073741824)
+		// {
+		// 	iters=100;
+		// }
+			
 	
 		do {
+
+			printf(" iters %lli --  \n",iters );fflush(stdout);
+			
 			prom_time = 0;
 			ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1);
 			c = clock();
@@ -157,11 +201,12 @@ int main(int argc, char **argv)
 			if ((sec < 1.2)||(sec > 1.3))
 				iters = (int)(iters * 5.0/(4.0 * sec));
 			
-			
+		// printf("%lli -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
+		
 		} while ((sec < 1.2) || (sec > 1.3));
 		
-		printf("%d -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
-		outp += sprintf(outp,"%d -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time);fflush(stdout);
+		printf("%lli -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
+		outp += sprintf(outp,"%lli -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time);fflush(stdout);
 		// outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
 		if (len==44) {
 			ipi += 0.05 * tmpd;
@@ -175,6 +220,8 @@ int main(int argc, char **argv)
 		
 		++i;
 		len = iter_list[i];
+		printf(" len %lli --  \n",len );fflush(stdout);
+		printf(" iters %lli --  \n",iters );fflush(stdout);
 	}
 	outp += sprintf(outp, "ipi %.2f\n", ipi);
 	if (fp) {

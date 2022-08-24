@@ -16,11 +16,12 @@ extern char infoString[];  /* Each AE implementation must have a global one */
 #ifndef MAX_ITER
 #define MAX_ITER 10
 #endif
+ALIGN(64) char pt[1073741824] = {0};
 
 int main(int argc, char **argv)
 {
 	/* Allocate locals */
-	ALIGN(64) char pt[4194304] = {0};
+	// ALIGN(64) char pt[4194304] = {0};
 	ALIGN(16) char tag[16];
 	ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
 	ALIGN(16) unsigned char nonce[] = "abcdefghijklmnop";
@@ -28,7 +29,8 @@ int main(int argc, char **argv)
 	int iter_list[2048]; /* Populate w/ test lengths, -1 terminated */
 	ae_ctx* ctx = ae_allocate(NULL);
 	char *outp = outbuf;
-	int iters, i, j, len;
+	unsigned long long int iters, i, j;
+	long long int  len;
 	double Hz,sec;
 	double ipi=0, tmpd;
 	clock_t c;
@@ -46,7 +48,9 @@ int main(int argc, char **argv)
 	if (MAX_ITER < 1048576) iter_list[i++] = 1048576;
 	if (MAX_ITER < 2097152) iter_list[i++] = 2097152;
 	if (MAX_ITER < 4194304) iter_list[i++] = 4194304;
-	
+	if (MAX_ITER < 4194304*4) iter_list[i++] = 4194304*4;
+	if (MAX_ITER < (4194304*4)*4) iter_list[i++] = (4194304*4)*4;
+	if (MAX_ITER < 1073741824) iter_list[i++] = 1073741824;
 	iter_list[i] = -1;
 
     /* Create file for writing data */
@@ -113,10 +117,13 @@ int main(int argc, char **argv)
 	do {
 	
 		ae_init(ctx, key, 16, 12,MAX_ITER, 16);
+
 		c = clock();
 		for (j = 0; j < iters; j++) {
 			ae_init(ctx, key, 16, 12,MAX_ITER, 16);
+			
 		}
+		
 		c = clock() - c;
 		sec = c/(double)CLOCKS_PER_SEC;
 		tmpd = (sec * Hz) / (iters);
@@ -135,17 +142,18 @@ int main(int argc, char **argv)
 	 * Get times over different lengths
 	 */
 	iters = (int)(Hz/1000);
-	printf("iteracioes -- %i\n\n",iters);fflush(stdout);
+	printf("iteracioes -- %lli\n\n",iters);fflush(stdout);
 
 	i=0;
 	len = iter_list[0];
 	double prom_time = 0;
 
 	while (len >= 0) {
-	
 		do {
 			prom_time = 0;
-			// printf("iters  %i\n", iters);
+			
+			// printf("iters  %lli\n", iters);
+			// printf("iters  %lli\n", len);
 			ae_init(ctx, key, 16, 12,len, 16);
 			
 			ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1);
@@ -162,11 +170,10 @@ int main(int argc, char **argv)
 			prom_time = sec/iters;
 			if ((sec < 1.2)||(sec > 1.3))
 				iters = (int)(iters * 5.0/(4.0 * sec));
-			
 		} while ((sec < 1.2) || (sec > 1.3));
 		
-		printf("%d -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
-		outp += sprintf(outp,"%d -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time);fflush(stdout);
+		printf("%lli -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
+		outp += sprintf(outp,"%lli -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time);fflush(stdout);
 		// outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
 		if (len==44) {
 			ipi += 0.05 * tmpd;
@@ -180,6 +187,8 @@ int main(int argc, char **argv)
 		
 		++i;
 		len = iter_list[i];
+		printf(" len %lli --  \n",len );fflush(stdout);
+		printf(" iters %lli --  \n",iters );fflush(stdout);
 	}
 	outp += sprintf(outp, "ipi %.2f\n", ipi);
 	if (fp) {
