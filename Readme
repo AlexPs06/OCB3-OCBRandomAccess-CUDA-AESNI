@@ -1,0 +1,28 @@
+Cada carpeta contiene una version distinta de OCB 
+en el nombre de la carpeta se especifica que instrucciones se uso 
+junto con el tamaño de estas. Los nombres de las carpetas 
+siguen el formato:
+
+            OCBNI512V2AES
+
+La carpeta con el nombre anterior indica que es OCB usando las 
+instrucciones nativas (NI) de tamaño 512 bits, usando 2 rondas de AES
+
+Dentro de cada carpeta hay un archivo makefile, es necesario ejecutarlo 
+usando el comando make para compilar los programas, todavia falta limpiar los
+programas usados pero los principales son test.cpp y timing_clocks.cpp 
+en test se realizan las pruebas de ser necesario si se requiere ver resultados
+y timing_clocks.cpp genera un archivo con los tiempos de mensajes de distintos 
+tamaños.
+Para ejecutarlos es necesario pasar hasta un maximo de 2 parametros: la frecuen
+cia del procesador en MHz y el nombre del archivo donde guardaran los datos
+El comando para timing_clocks.cpp quedaria asi:
+
+./timing_clocks 2300 timing_ocb_.txt
+
+el comando para test.cpp quedaria asi
+
+./test 2300 
+
+Para las versiones de cuda es distinto pero esas versiones siguen en proceso de 
+aceptaciòn.
