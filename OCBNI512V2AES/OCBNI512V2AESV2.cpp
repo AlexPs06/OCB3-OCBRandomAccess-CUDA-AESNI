@@ -950,6 +950,8 @@ int ae_encrypt(ae_ctx     *  ctx,
     checksum.checksum512  = zero_block_512();
     i = pt_len/(BPI*64);
 
+	// exit(1);
+
 	ctx->nonces[index]=swap_if_le512(ctx->nonces[index]);
     if (i) {
         block512 ta[BPI];
@@ -1140,9 +1142,13 @@ int ae_encrypt(ae_ctx     *  ctx,
         add_nonce.bl128[index_nonce_checksum] = _mm_add_epi32 (add_nonce.bl128[index_nonce_checksum], add3);
         nonce128 = _mm_add_epi32 (nonce128, add_nonce.bl128[index_nonce_checksum]);
         nonce128 =  swap_if_le(nonce128);
+	
         AES_ecb_encrypt_blks_ROUNDS(&nonce128, 1, &keys_two_round ,AES_ROUNDS);
+
         checksumFinal = xor_block(nonce128, checksumFinal);           /* Part of tag gen */
+		
 		AES_ecb_encrypt_blks(&checksumFinal,1,&ctx->encrypt_key);
+		
 		offset = xor_block(checksumFinal, ctx->ad_checksum);   /* Part of tag gen */
 
         if (tag) {

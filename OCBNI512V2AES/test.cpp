@@ -48,6 +48,7 @@ int num_values = 0;
 extern char infoString[];  /* Each AE implementation must have a global one */
 
 #ifndef MAX_ITER
+// #define MAX_ITER 32//1048576
 #define MAX_ITER 1048576
 #endif
 
@@ -100,8 +101,8 @@ void print_hex_string(unsigned char* buf, int len)
     for (i = 0; i < len; i++)
         printf("%02x", *((unsigned char *)buf + i));
 }
-ALIGN(64) unsigned char pt[MAX_ITER+16] = {0,};
-char outbuf[MAX_ITER*15+1024+4096];
+ALIGN(64) unsigned char pt[MAX_ITER] = {0,};
+char outbuf[10*15+1024+4096];
 
 int main(int argc, char **argv)
 {

@@ -41,17 +41,17 @@ int read_sample(unsigned char * plaintext, unsigned long long  size){
 
     return 1;
 } 
+const unsigned long long size =  1073741824+1073741824/2;
 
-ALIGN(64) unsigned char pt[1073741824];
+ALIGN(64) unsigned char pt[size];
 ALIGN(64) unsigned char * ciphertext;
 
 int main(int argc, char **argv)
 {
-	unsigned long long size =  1073741824;
     // size = 1048576;
     // size = 4096;
     // pt =  (ALIGN(64) unsigned char*) malloc((size) * sizeof(ALIGN(64) unsigned char));
-    ciphertext = (unsigned char*) malloc((size+16) * sizeof(unsigned char));
+    // ciphertext = (unsigned char*) malloc((size+16) * sizeof(unsigned char));
 	/* Allocate locals */
 	// ALIGN(64) char pt[4194304] = {0};
 	ALIGN(16) char tag[16];
@@ -83,6 +83,7 @@ int main(int argc, char **argv)
 	if (MAX_ITER < 4194304*4) iter_list[i++] = 4194304*4;
 	if (MAX_ITER < (4194304*4)*4) iter_list[i++] = (4194304*4)*4;
 	if (MAX_ITER < 1073741824) iter_list[i++] = 1073741824;
+	if (MAX_ITER < 1073741824+1073741824/2) iter_list[i++] = 1073741824+1073741824/2;
 	
 	iter_list[i] = -1;
 
@@ -160,7 +161,6 @@ int main(int argc, char **argv)
 		
 		if ((sec < 1.2)||(sec > 1.3))
 			iters = (int)(iters * 5.0/(4.0 * sec));
-		printf("%f\n", sec);
 	} while ((sec < 1.2) || (sec > 1.3));
 	
 	printf("key -- %.2f (%d cycles)\n",sec,(int)tmpd);fflush(stdout);
@@ -183,7 +183,7 @@ int main(int argc, char **argv)
 	
 		do {
 
-			printf(" iters %lli --  \n",iters );fflush(stdout);
+			// printf(" iters %lli --  \n",iters );fflush(stdout);
 			
 			prom_time = 0;
 			ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1);
@@ -198,8 +198,14 @@ int main(int argc, char **argv)
 			// printf("tmpd -- %6.5f\n\n",tmpd);fflush(stdout);
 			// printf("sec -- %6.10f\n\n",sec/iters);fflush(stdout);
 			prom_time = sec/iters;
+			
+			if (len == 1073741824 || len == 1073741824+1073741824/2 ){
+				break;
+			}
+
 			if ((sec < 1.2)||(sec > 1.3))
 				iters = (int)(iters * 5.0/(4.0 * sec));
+			
 			
 		// printf("%lli -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
 		
