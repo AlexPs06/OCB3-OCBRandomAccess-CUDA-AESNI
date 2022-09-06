@@ -17,10 +17,15 @@ extern char infoString[];  /* Each AE implementation must have a global one */
 #define MAX_ITER 10
 #endif
 
+
+const unsigned long long size =  1073741824+1073741824/2;
+
+ALIGN(32) unsigned char pt[size];
+
 int main(int argc, char **argv)
 {
 	/* Allocate locals */
-	ALIGN(64) char pt[4194304] = {0};
+	// ALIGN(64) char pt[1073741824+1073741824/2] = {0};
 	ALIGN(16) char tag[16];
 	ALIGN(16) unsigned char key[] = "abcdefghijklmnop";
 	ALIGN(16) unsigned char nonce[] = "abcdefghijklmnop";
@@ -46,6 +51,10 @@ int main(int argc, char **argv)
 	if (MAX_ITER < 1048576) iter_list[i++] = 1048576;
 	if (MAX_ITER < 2097152) iter_list[i++] = 2097152;
 	if (MAX_ITER < 4194304) iter_list[i++] = 4194304;
+	if (MAX_ITER < 4194304*4) iter_list[i++] = 4194304*4;
+	if (MAX_ITER < (4194304*4)*4) iter_list[i++] = (4194304*4)*4;
+	if (MAX_ITER < 1073741824) iter_list[i++] = 1073741824;
+	if (MAX_ITER < 1073741824+1073741824/2) iter_list[i++] = 1073741824+1073741824/2;
 	iter_list[i] = -1;
 
     /* Create file for writing data */
@@ -153,6 +162,9 @@ int main(int argc, char **argv)
 			tmpd = (sec * Hz) / ((double)len * iters);
 			prom_time = sec/iters;
 			
+			if (len == 1073741824 || len == 1073741824+1073741824/2 ){
+				break;
+			}
 			if ((sec < 1.2)||(sec > 1.3))
 				iters = (int)(iters * 5.0/(4.0 * sec));
 			

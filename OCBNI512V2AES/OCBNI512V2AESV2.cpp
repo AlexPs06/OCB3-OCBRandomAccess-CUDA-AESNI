@@ -1566,7 +1566,7 @@ int ae_decrypt(ae_ctx     *ctx,
 
 
 #if USE_AES_NI
-char infoString[] = "OCB1R (AES-NI)";
+char infoString[] = "OCB2R AVX512(AES-NI)";
 #elif USE_REFERENCE_AES
 char infoString[] = "OCB3 (Reference)";
 #elif USE_OPENSSL_AES

@@ -1456,7 +1456,7 @@ int main()
 #endif
 
 #if USE_AES_NI
-char infoString[] = "OCB3 (AES-NI)";
+char infoString[] = "OCB3 256 (AES-NI)";
 #elif USE_REFERENCE_AES
 char infoString[] = "OCB3 (Reference)";
 #elif USE_OPENSSL_AES
