@@ -593,8 +593,6 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int tag_le
     AES_encrypt((unsigned char *)&ctx->cached_Top,
                             (unsigned char *)&ctx->Lstar, &ctx->encrypt_key);
 
-	// imprimiArreglo(16,(unsigned char *)&ctx->Lstar);
-	// exit(1);
 	tmp_blk = swap_if_le(ctx->Lstar);
     tmp_blk = double_block(tmp_blk);
     ctx->Ldollar = swap_if_le(tmp_blk);
@@ -675,8 +673,6 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 			block ta[BPI], oa[BPI];
 			ad_block_num += BPI;
 			tz = ntz(ad_block_num);
-			// imprimiArreglo(16,(unsigned char * )&ad_offset);
-			// imprimiArreglo(16,(unsigned char * )&ctx->L[0]);
 			oa[0] = xor_block(ad_offset, ctx->L[0]);
 			ta[0] = xor_block(oa[0], adp[0]);
 			oa[1] = xor_block(oa[0], ctx->L[1]);
@@ -698,11 +694,6 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 				ad_offset = xor_block(oa[6], getL(ctx, tz));
 				ta[7] = xor_block(ad_offset, adp[7]);
 			#endif
-			// for(int a = 0; a<BPI;a++){
-			// 	imprimiArreglo(16,(unsigned char * )&oa[a]);
-			// }
-			// exit(1);
-			// printf("hola mundo \n");
 
 			AES_ecb_encrypt_blks(ta,BPI,&ctx->encrypt_key);
 			ad_checksum = xor_block(ad_checksum, ta[0]);
@@ -731,32 +722,17 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 			k=0;
 			#if (BPI == 8)
 			if (remaining >= 64) {
-				// imprimiArreglo(16,(unsigned char * )&ad_offset);
 
 				tmp.bl = xor_block(ad_offset, ctx->L[0]);
-				// imprimiArreglo(16,(unsigned char * )&tmp.bl);
-
 				ta[0] = xor_block(tmp.bl, adp[0]);
 				tmp.bl = xor_block(tmp.bl, ctx->L[1]);
-				// imprimiArreglo(16,(unsigned char * )&tmp.bl);
-
 				ta[1] = xor_block(tmp.bl, adp[1]);
 				ad_offset = xor_block(ad_offset, ctx->L[1]);
-				// imprimiArreglo(16,(unsigned char * )&ad_offset);
-
 				ta[2] = xor_block(ad_offset, adp[2]);
 				ad_offset = xor_block(ad_offset, ctx->L[2]);
-				// imprimiArreglo(16,(unsigned char * )&ad_offset);
-
 				ta[3] = xor_block(ad_offset, adp[3]);
 				remaining -= 64;
 				k=4;
-
-				// printf("hola mundo \n");
-				// for(int a = 0; a<4;a++){
-				// 		imprimiArreglo(16,(unsigned char * )&ta[a]);
-				// }
-				// exit(1);
 			}
 			#endif
 			if (remaining >= 32) {
@@ -769,10 +745,6 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 			}
 			if (remaining >= 16) {
 				ad_offset = xor_block(ad_offset, ctx->L[0]);
-
-				// imprimiArreglo(16,(unsigned char * )&ctx->L[0]);
-
-
 				ta[k] = xor_block(ad_offset, adp[k]);
 				remaining = remaining - 16;
 				++k;

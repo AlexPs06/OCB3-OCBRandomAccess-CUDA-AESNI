@@ -153,10 +153,7 @@ int main(int argc, char **argv)
 		do {
 			prom_time = 0;
 			
-			// printf("iters  %lli\n", iters);
-			// printf("iters  %lli\n", len);
 			ae_init(ctx, key, 16, 12,len, 16);
-			
 			ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1);
 			c = clock();
 			for (j = 0; j < iters; j++) {
@@ -166,8 +163,6 @@ int main(int argc, char **argv)
 			c = clock() - c;
 			sec = c/(double)CLOCKS_PER_SEC;
 			tmpd = (sec * Hz) / ((double)len * iters);
-			// printf("tmpd -- %6.5f\n\n",tmpd);fflush(stdout);
-			// printf("sec -- %6.10f\n\n",sec/iters);fflush(stdout);
 			prom_time = sec/iters;
 			if (len == 1073741824 || len == 1073741824+1073741824/2 ){
 				break;

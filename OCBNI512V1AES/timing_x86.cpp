@@ -172,10 +172,7 @@ int main(int argc, char **argv)
         nonce[11] = 0;
         DO(ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1); nonce[11] += 1);
         tmpd = ((median_get())/(len*(double)N));
-        // printf("%i\n",i);
-        // if (len != 0){
-		    outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
-        // }
+		outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
 
 		if (len==44) {
 			ipi += 0.05 * tmpd;

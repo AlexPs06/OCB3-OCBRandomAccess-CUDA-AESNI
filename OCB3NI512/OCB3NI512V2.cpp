@@ -551,30 +551,6 @@ int ae_init(ae_ctx *ctx, const void *key, int key_len, int nonce_len, int tag_le
     #endif
 
 
-
-    // ctx->encrypt_key_512 = new 
-    // AES_KEY_512 temporal;
-    // union {block oa128[4]; block512 oa512;} oa;
-    // oa.oa128[0]=ctx->encrypt_key.rd_key[i];
-    // oa.oa128[1]=ctx->encrypt_key.rd_key[i];
-    // oa.oa128[2]=ctx->encrypt_key.rd_key[i];
-    // oa.oa128[3]=ctx->encrypt_key.rd_key[i];
-    // temporal.rd_key[0]=oa.oa512;
-    // for(i = 0; i< 11; i++ ){
-	
-	// 	imprimiArreglo2(16,(unsigned char *)&ctx->encrypt_key.rd_key[i]);
-	// }
-    
-    // for(i = 0; i< 11; i++ ){
-	
-	// 	imprimiArreglo2(16,(unsigned char *)&ctx->encrypt_key_512.rd_key[i]);
-	// }
-    // block s = xor_block(ctx->encrypt_key.rd_key[0], ctx->encrypt_key.rd_key[0] );
-    // imprimiArreglo2(16,(unsigned char * )&s );
-    // block512 t = xor_block_512(ctx->encrypt_key_512.rd_key[0], ctx->encrypt_key_512.rd_key[0] );
-    // imprimiArreglo2(16,(unsigned char * )&t );
-    // exit(1);
-
     /* Zero things that need zeroing */
     ctx->cached_Top = ctx->ad_checksum = zero_block();
     ctx->ad_blocks_processed = 0;
@@ -665,8 +641,6 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 			block ta[BPI], oa[BPI];
 			ad_block_num += BPI;
 			tz = ntz(ad_block_num);
-			// imprimiArreglo(16,(unsigned char * )&ad_offset);
-			// imprimiArreglo(16,(unsigned char * )&ctx->L[0]);
 			oa[0] = xor_block(ad_offset, ctx->L[0]);
 			ta[0] = xor_block(oa[0], adp[0]);
 			oa[1] = xor_block(oa[0], ctx->L[1]);
@@ -721,32 +695,22 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 			k=0;
 			#if (BPI == 8)
 			if (remaining >= 64) {
-				// imprimiArreglo(16,(unsigned char * )&ad_offset);
 
 				tmp.bl = xor_block(ad_offset, ctx->L[0]);
-				// imprimiArreglo(16,(unsigned char * )&tmp.bl);
 
 				ta[0] = xor_block(tmp.bl, adp[0]);
 				tmp.bl = xor_block(tmp.bl, ctx->L[1]);
-				// imprimiArreglo(16,(unsigned char * )&tmp.bl);
 
 				ta[1] = xor_block(tmp.bl, adp[1]);
 				ad_offset = xor_block(ad_offset, ctx->L[1]);
-				// imprimiArreglo(16,(unsigned char * )&ad_offset);
 
 				ta[2] = xor_block(ad_offset, adp[2]);
 				ad_offset = xor_block(ad_offset, ctx->L[2]);
-				// imprimiArreglo(16,(unsigned char * )&ad_offset);
 
 				ta[3] = xor_block(ad_offset, adp[3]);
 				remaining -= 64;
 				k=4;
 
-				// printf("hola mundo \n");
-				// for(int a = 0; a<4;a++){
-				// 		imprimiArreglo(16,(unsigned char * )&ta[a]);
-				// }
-				// exit(1);
 			}
 			#endif
 			if (remaining >= 32) {
@@ -759,10 +723,6 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 			}
 			if (remaining >= 16) {
 				ad_offset = xor_block(ad_offset, ctx->L[0]);
-
-				// imprimiArreglo(16,(unsigned char * )&ctx->L[0]);
-
-
 				ta[k] = xor_block(ad_offset, adp[k]);
 				remaining = remaining - 16;
 				++k;
@@ -794,17 +754,9 @@ static void process_ad(ae_ctx *ctx, const void *ad, int ad_len, int final)
 				case 1: ad_checksum = xor_block(ad_checksum, ta[0]);
 			}
 			ctx->ad_checksum = ad_checksum;
-
-
-
 		}
 
 	}
-	// printf("S       ");
-	// imprimiArreglo(16,(unsigned char * )&ad_checksum);
-    // printf("---------------------------\n");
-
-	// exit(1);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -959,12 +911,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 					offset=oa.oa128[l+j] = xor_block(offset, getL(ctx, ntz(block_num)));
 				}
 
-				// // union { uint32_t u32[16]; uint8_t u8[64]; block512 bl; } tmp512;
-				
-				// union { uint32_t u32[16]; uint8_t u8[64]; block512 bl; block bl128[4]; } tmp512;
-
-
-				
 				if(remaining%16==0){
 
 					ta[k] = xor_block_512(oa.oa512[k], ptp[k]);
@@ -991,9 +937,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 						tmp512.bl128[j] =oa.oa128[l+j];
 					}
 				}
-
-				
-
 				++k;
 			}
 	

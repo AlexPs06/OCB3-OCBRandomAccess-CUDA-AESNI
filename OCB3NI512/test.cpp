@@ -278,31 +278,10 @@ int main(int argc, char **argv)
         // dividing the difference by CLOCKS_PER_SEC to convert to seconds
         
         printf("The elapsed time is %08Lf  seconds\n", time_spent/repeticiones);
-        // DO(ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1); nonce[11] += 1);
-
-
-        // tmpd = ((median_get())/(len*(double)N));
-		// outp += sprintf(outp, "%5d  %6.2f\n", len, tmpd);
-		// if (len==44) {
-		// 	ipi += 0.05 * tmpd;
-		// } else if (len==552) {
-		// 	ipi += 0.15 * tmpd;
-		// } else if (len==576) {
-		// 	ipi += 0.2 * tmpd;
-		// } else if (len==1500) {
-		// 	ipi += 0.6 * tmpd;
-		// }
-		
-		// ++i;
-		// len = iter_list[i];
+ 
         break;
 	}	
-	// outp += sprintf(outp, "ipi %.2f\n", ipi);
-	// if (fp) {
-    //     fprintf(fp, "%s", outbuf);
-    //     fclose(fp);
-    // } else
-    //     fprintf(stdout, "%s", outbuf);
+
     
     
 	return ((pt[0]==12) && (pt[10]==34) && (pt[20]==56) && (pt[30]==78));

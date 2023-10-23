@@ -477,14 +477,10 @@ static inline void AES_ecb_decrypt_blks_512(block512 *blks, unsigned nblks, AES_
 struct _ae_ctx {
     // block offset;                          /* Memory correct               */
     block checksum;                        /* Memory correct               */
-    // block Lstar;                           /* Memory correct               */
-    // block Ldollar;                         /* Memory correct               */
-    // block L[L_TABLE_SZ];                   /* Memory correct               */
     block ad_checksum;                     /* Memory correct               */
     block512 *nonces;                         /* Memory correct               */
     long long int num_of_nonces;              /* Memory correct               */
     // block ad_offset;                       /* Memory correct               */
-    // block cached_Top;                      /* Memory correct               */
 	// uint64_t KtopStr[3];                   /* Register correct, each item  */
     uint32_t ad_blocks_processed;
     uint32_t blocks_processed;
@@ -617,8 +613,6 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 ke
         0x00, 0x00, 0x00, 0x01
     );
 	const unsigned long long  int lenght  = (ctx->num_of_nonces)+1;
-    // block512 bloques512[ctx->num_of_nonces+4];
-
     block *tmp_blk = (block *)nonce;
 	
 	AES_ecb_encrypt_blks(tmp_blk,1,&ctx->encrypt_key);
@@ -646,26 +640,16 @@ static void gen_offset_from_nonce(ae_ctx *ctx, const void *nonce, AES_KEY_512 ke
 	noncetemp.bl128[1] = tmp_blk[0];
 	noncetemp.bl128[2] = tmp_blk[0];
 	noncetemp.bl128[3] = tmp_blk[0];
-    // noncetemp.bl512 =_mm512_add_epi32(noncetemp.bl512,add_nonce.bl512);
-
 
     for(i = 0; i<lenght; i++ ){
-		// printf("%lli\n",i );
-
         bloques512[i] = swap_if_le512(noncetemp.bl512);
-		// imprimiArreglo2(64,(unsigned char * )&bloques512[i]);
         noncetemp.bl512=_mm512_add_epi32(noncetemp.bl512,add4);
-		// printf("%lli\n",i );
-
     }
-	// printf("llegue\n");
-	// printf("%lli\n",ctx->num_of_nonces+1 );
     AES_ecb_encrypt_blks_512(bloques512, lenght, &keys512);
 	
 
 	for(i = 0; i<lenght; i++ ){
         bloques512[i] = swap_if_le512(bloques512[i]);
-		// imprimiArreglo2(64,(unsigned char * )&bloques512[i]);
     }
 	
 }
@@ -860,12 +844,6 @@ int ae_encrypt(ae_ctx     *  ctx,
     block512       * ctp = (block512 *)ct;
     const block512 * ptp = (block512 *)pt;
 
-	
-
-	// block512 * nonces = (block512 *) malloc((ctx->num_of_nonces+1) * sizeof(block512));
-	
-	// const int x = ctx->num_of_nonces+4;
-    // union {block bl128[4]; block512 bl512[ctx->num_of_nonces+4];} nonces;
     
 	AES_KEY_512 keys512 =  AES_cast_128_to_512_key2(&ctx->encrypt_key);
 
@@ -1060,8 +1038,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 			ctx->blocks_processed = block_num;
 		}
 
-		// imprimiArreglo2(16,(unsigned char *)&ctx->nonces[index]);
-
 		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys512_two_round,AES_ROUNDS);
 		
 		for(int j = 0; j<k; j++){
@@ -1073,8 +1049,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 		}
 		
 		AES_ecb_encrypt_blks_512(ta.ta512,k,&keys512);
-
-		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[0]  );
 		if (remaining) {
 			--k;
 
@@ -1224,9 +1198,6 @@ int ae_decrypt(ae_ctx     *ctx,
 
 	/* Encrypt plaintext data BPI blocks at a time */
 
-
-
-
     add_nonce.bl512 = _mm512_set_epi32 (
         0x03, 0x03, 0x03, 0x03,
         0x02, 0x02, 0x02, 0x02,
@@ -1245,11 +1216,9 @@ int ae_decrypt(ae_ctx     *ctx,
 
     unsigned index;
 
-    // offset = ctx->offset;
     checksum.checksum512  = zero_block_512();
     i = ct_len/(BPI*64);
 
-	// imprimiArreglo2(16,(unsigned char *)&nonces[index]);
 
 	nonces[index]=swap_if_le512(nonces[index]);
     if (i) {
@@ -1285,7 +1254,6 @@ int ae_decrypt(ae_ctx     *ctx,
 
 	    ctx->blocks_processed = block_num;
     }
-	// printf("soy block_num %i\n,",ctx->blocks_processed );
 
     if (final) {
 
@@ -1337,10 +1305,7 @@ int ae_decrypt(ae_ctx     *ctx,
 				if(remaining%16==0){
 
 					block_num = block_num  + remaining/16;
-			    	// checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[k]);
 					remaining=remaining-remaining;
-
-
 					delta.deltak512[k] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
 					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
@@ -1358,16 +1323,12 @@ int ae_decrypt(ae_ctx     *ctx,
 					add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
 					delta.deltak512[k]=swap_if_le512(delta.deltak512[k]);
 
-
-
 					ALIGN(16) unsigned char temp[16]={0,};
 					temp[remaining%16]=1;
 					block * temp128 = (block *)temp;
 
 					memcpy(tmp512.u8, ptp+k, remaining);
 					tmp512.bl128[indexBlock] = _mm_xor_si128(temp128[0],tmp512.bl128[indexBlock] );
-					// checksum.checksum128[0] = xor_block(checksum.checksum128[0], tmp512.bl128[indexBlock]);
-
 				}
 
 				++k;
@@ -1375,18 +1336,6 @@ int ae_decrypt(ae_ctx     *ctx,
 			ctx->blocks_processed = block_num;
 		}
 
-		// for(int j = 0; j<k; j++){
-
-		// 	delta[j] = _mm512_add_epi32 (nonces[index],add_nonce.bl512);
-
-		// 	add_nonce.bl512=_mm512_add_epi32 (add4,add_nonce.bl512);
-
-		// 	delta[j]=swap_if_le512(delta[j]);
-        // }
-		// imprimiArreglo2(16,(unsigned char *)&delta.deltak512);
-		// nonces[index] =swap_if_le512(nonces[index]);
-
-		// imprimiArreglo2(16,(unsigned char *)&nonces[index]);
 
 		AES_ecb_encrypt_blks_512_ROUNDS(delta.deltak512, k, &keys_encrypt_512,AES_ROUNDS);
 
@@ -1397,29 +1346,15 @@ int ae_decrypt(ae_ctx     *ctx,
 		if (remaining) {
 			ta.ta128[4*(k-1) + indexBlock] = delta.deltak128[4*(k-1) + indexBlock];
 		}
-		// printf("%i\n",indexBlock);
-		// printf("%i\n",k);
-		// printf("%i\n",4*(k-1) + indexBlock);
-		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[4*(k-1) + indexBlock]  );
-		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[0]  );
 
 		AES_ecb_decrypt_blks_512(ta.ta512,k,&keys_decrypt_512);
 
-
-
-		// imprimiArreglo2(16,(unsigned char *)&ta.ta128[0]  );
-		// exit(1);
 		if (remaining) {
 			--k;
-
 			ta.ta128[4*(k) + indexBlock] = _mm_xor_si128( ta.ta128[4*(k) + indexBlock], tmp512.bl128[indexBlock]);
-
 			delta.deltak128[4*(k) + indexBlock] = zero_block();
-
 			ptp[k] = xor_block_512(delta.deltak512[k], ta.ta512[k]);
 			checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[k]);
-
-			// imprimiArreglo2(16,(unsigned char *)&ptp[k]  );
 		}
 
 		switch (k) {
@@ -1452,9 +1387,6 @@ int ae_decrypt(ae_ctx     *ctx,
 			case 1:
 					ptp[0] = xor_block_512(delta.deltak512[0], ta.ta512[0]);
 					checksum.checksum512 = xor_block_512(checksum.checksum512, ptp[0]);
-					// imprimiArreglo2(16,(unsigned char *)&ptp[0]  );
-
-
 					break;
 		}
 
@@ -1469,12 +1401,8 @@ int ae_decrypt(ae_ctx     *ctx,
             temp_len = temp_len-16;
             i++;
         }
-		// imprimiArreglo2(16,(unsigned char *)&checksumFinal  );
-
 		tmp512.bl=nonces[index];
         block nonce128 = tmp512.bl128[index];
-		//  _mm_loadu_si128(&((__m128i*)&nonces[index])[0]);
-
         int index_nonce_checksum =ctx->blocks_processed%4;
         block add3;
 		if(index_nonce_checksum==0)
@@ -1482,29 +1410,17 @@ int ae_decrypt(ae_ctx     *ctx,
 		else
 			add3 = _mm_set_epi32 (-1, -1, -1, -1);
 
-
-		// imprimiArreglo2(16,(unsigned char *)&add_nonce.bl128[index_nonce_checksum]  );
-
         add_nonce.bl128[index_nonce_checksum] = _mm_add_epi32 (add_nonce.bl128[index_nonce_checksum], add3);
-
-		// imprimiArreglo2(16,(unsigned char *)&add_nonce.bl128[index_nonce_checksum]  );
-		// imprimiArreglo2(16,(unsigned char *)&nonce128 );
-
         nonce128 = _mm_add_epi32 (nonce128, add_nonce.bl128[index_nonce_checksum]);
         nonce128 =  swap_if_le(nonce128);
 
-		// imprimiArreglo2(16,(unsigned char *)&nonce128  );
-
-
         AES_ecb_encrypt_blks_ROUNDS(&nonce128, 1, &ctx->encrypt_key ,AES_ROUNDS);
-		// imprimiArreglo2(16,(unsigned char *)&nonce128  );
 
         checksumFinal = xor_block(nonce128, checksumFinal);           /* Part of tag gen */
 
 
 		AES_ecb_encrypt_blks(&checksumFinal,1,&ctx->encrypt_key);
 		offset = xor_block(checksumFinal, ctx->ad_checksum);   /* Part of tag gen */
-		// imprimiArreglo2(16,(unsigned char *)&offset );
 
 		 if (tag) {
 			#if (OCB_TAG_LEN == 16)

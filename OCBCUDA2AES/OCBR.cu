@@ -136,8 +136,6 @@ int ae_init(ae_ctx *ctx, const unsigned char *k, int key_len, int nonce_len, int
     time = clock() - time ;
     CPU_time += time/(double)CLOCKS_PER_SEC;
     
-    // imprimiArreglo(16,(unsigned char*)&tmp_aes_block[4]);
-	// imprimiArreglo(16,(unsigned char*)&tmp_aes_block[8]);
     AES128Encrypt(tmp_aes_block, 3, &ctx->encrypt_key.keys[0][0]);
     
     time = clock();
@@ -157,9 +155,6 @@ int ae_init(ae_ctx *ctx, const unsigned char *k, int key_len, int nonce_len, int
     ctx->RandomAcces_key.keys[2][3] = tmp_aes_block[11];
    
     ctx->tag_len = tag_len;
-
-    // imprimiArreglo(16,(unsigned char*)&tmp_aes_block[4]);
-	// imprimiArreglo(16,(unsigned char*)&tmp_aes_block[8]);
 
     time = clock() - time ;
     CPU_time += time/(double)CLOCKS_PER_SEC;
@@ -401,48 +396,31 @@ unsigned char multiplicacionENGF2(int caso , unsigned short numero2){
         return numero2;
         break;
     case 2:
-
         numero2 = GF2Redution(numero2 * 2);
-
         return numero2 ;
         break;
     case 3:
-
         numero2 = GF2Redution((numero2*2)^numero2);
-
         return numero2;
         break;
     case 9:
-
         numero2 = GF2Redution((numero2*8)^numero2);
-
         return numero2;
         break;
 
     case 11:
-
-
         numero2 = GF2Redution((numero2*8)) ^ GF2Redution((numero2*2)^numero2) ;
-
         return numero2;
         break;
     case 13:
-
-
         numero2 = GF2Redution((numero2*8)) ^ GF2Redution((numero2*4)) ^ numero2;
-
         return numero2;
         break;
     case 14:
-
-
         numero2 = GF2Redution((numero2*8)) ^ GF2Redution((numero2*4)) ^ GF2Redution((numero2*2));
-
         return numero2;
         break;
-
     default:
-
         break;
     }
     return 0;
@@ -1057,36 +1035,19 @@ __device__ void AES_128(unsigned int *m, unsigned int *keys, int index, unsigned
             8,  13,  2,  7,
             12,  1,  6,  11,
         };
-
-        // imprimiArregloCuda(16,(unsigned char *)&m[index].block );
-
-
         addRoundKey( &m[index], keys,0);
 
-
         for (int j = 1; j < 10; j++){
-            // subBytes(block, matrizCajaS);
             shiftRows(&m[index], shifttab);
-
-            //mixColumns(block);
             subBytesMixColumns(&m[index],  T1,  T2,  T3,  T4);
-
-            //añadimos llave de ronda
             addRoundKey( &m[index], keys,j); //
         }
-        // imprimiArregloCuda(16,(unsigned char *)&m[index].block );
 
         subBytes(&m[index], matrizCajaS);
-        // imprimiArregloCuda(16,(unsigned char *)&m[index].block );
 
         shiftRows(&m[index], shifttab);
-        // imprimiArregloCuda(16,(unsigned char *)&m[index].block );
 
         addRoundKey( &m[index], keys,10);
-        // imprimiArregloCuda(16,(unsigned char *)&m[index].block );
-
-        // imprimiArregloCuda(16,(unsigned char *)&keys[40] );
-
 
 }
 
@@ -1106,20 +1067,13 @@ __device__ void OCBAESDelta2Rounds(unsigned int block[4], unsigned int *keys, un
 }
 
 __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned int *keys, int index ){
-    // __shared__ unsigned char matrizCajaS[256];
-    // __shared__ int T1[256];
-    // __shared__ int T2[256];
-    // __shared__ int T3[256];
-    // __shared__ int T4[256];
 
     unsigned char matrizCajaS[256];
     int T1[256];
     int T2[256];
     int T3[256];
     int T4[256];
-        // if(threadIdx.x == 0 || index==0 ){
             AES_init_decrypt(matrizCajaS, T1, T2, T3, T4);
-        // }
 
             int shifttab[16]= {
                 0, 13,  10,  7,
@@ -1128,9 +1082,7 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned in
                 12,  9,   6,  3,
             };
 
-        // __syncthreads();
         unsigned int block[4];
-
         for (int i = 0 ; i< 4 ; i++){
             block[i]= m[index].block[i];
         }
@@ -1140,21 +1092,14 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned long long mlen, unsigned in
 
 
         for (int j = 1; j < 10; j++){
-            // subBytes(block, matrizCajaS);
             shiftRows(block, shifttab);
-
-            //mixColumns(block);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
-
-            //añadimos llave de ronda
             addRoundKey( block, keys,j); //
 
         }
 
         subBytes(block, matrizCajaS);
-
         shiftRows(block, shifttab);
-
         addRoundKey( block, keys,10);
         for (int i = 0 ; i< 4 ; i++){
             m[index].block[i]= block[i];
@@ -1800,24 +1745,6 @@ int main(int argc, char **argv) {
     // cout<<endl;
 
 
-//     int dev = 0;
-//     int supportsCoopLaunch = 0;
-//     cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, dev);
-//     cout <<"supportsCoopLaunch "<<supportsCoopLaunch<< endl;
-//    if (__cplusplus == 201703L)
-//         std::cout << "C++17" << endl;
-//     else if (__cplusplus == 201402L)
-//         std::cout << "C++14" << endl;
-//     else if (__cplusplus == 201103L)
-//         std::cout << "C++11" << endl;
-//     else if (__cplusplus == 199711L)
-//         std::cout << "C++98" << endl;
-//     else
-//         std::cout << "pre-standard C++" << endl;
-    // for(int j=0;j<adlen; j++){
-    //     ad[j]=j;
-    // }
-    // crypto_aead_decrypt(m, clen, c, mlen, ad, adlen, nsec, npub, k);
 
     return 0;
 }

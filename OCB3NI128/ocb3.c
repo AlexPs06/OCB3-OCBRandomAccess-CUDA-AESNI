@@ -863,10 +863,6 @@ int ae_encrypt(ae_ctx     *  ctx,
 			ta[7] = xor_block(oa[7], ptp[7]);
 			checksum = xor_block(checksum, ptp[7]);
     	#endif
-
-		// for (int i = 0; i < 8; i++){
-		// 	imprimiArreglo2(16,(unsigned char *)&oa[i] );
-		// }
 		
     	AES_ecb_encrypt_blks(ta,BPI,&ctx->encrypt_key);
 		for (k=0; k<BPI; k+=4) {
@@ -934,12 +930,7 @@ int ae_encrypt(ae_ctx     *  ctx,
 		if (remaining >= 16) {
 
 			offset = oa[k] = xor_block(offset, getL(ctx, 0));
-			// imprimiArreglo2(16,(unsigned char *)&offset[0] );
-			// imprimiArreglo2(16,(unsigned char *)&ptp[k] );
 			ta[k] = xor_block(offset, ptp[k]);
-			// imprimiArreglo2(16,(unsigned char *)&ta[k] );
-			// imprimiArreglo2(16,(unsigned char *)&ta[k] );
-
 			checksum = xor_block(checksum, ptp[k]);
 			remaining = remaining - 16;
 			++k;
@@ -948,26 +939,12 @@ int ae_encrypt(ae_ctx     *  ctx,
 			tmp.bl = zero_block();
 			memcpy(tmp.u8, ptp+k, remaining);
 			tmp.u8[remaining] = (unsigned char)0x80u;
-
-			// imprimiArreglo2(16,(unsigned char *)&offset );
-			// imprimiArreglo2(16,(unsigned char *)&ptp[k] );
-			// imprimiArreglo2(16,(unsigned char *)&tmp.u8[0] );
-
 			checksum = xor_block(checksum, tmp.bl);
-			// imprimiArreglo2(16,(unsigned char *)&checksum[0] );
-			// imprimiArreglo2(16,(unsigned char *)&ctx->Lstar[0] );
-
 			ta[k] = offset = xor_block(offset,ctx->Lstar);
 			++k;
 		}
         offset = xor_block(offset, ctx->Ldollar); /* Part of tag gen */
-		// imprimiArreglo2(16,(unsigned char *)&offset );
-
-        // imprimiArreglo2(16,(unsigned char *)&offset );
-		// imprimiArreglo2(16,(unsigned char *)&checksum );
 		ta[k] = xor_block(offset, checksum);      /* Part of tag gen */
-
-		// imprimiArreglo2(16,(unsigned char *)&ta[k] );
 		AES_ecb_encrypt_blks(ta,k+1,&ctx->encrypt_key);
 		offset = xor_block(ta[k], ad_checksum);   /* Part of tag gen */
 		if (remaining) {

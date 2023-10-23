@@ -29,10 +29,7 @@ unsigned char matrizCajaS[256]={
 };
 
 
-// 0x8b, 0x2e, 0x18, 0xdd,   
-// 0x80, 0x51, 0xfe, 0x46, 
-// 0xbc, 0xa9, 0x59, 0x01,
-// 0x24, 0xf6, 0xd8, 0x50,
+
 void imprimiArreglo(int tam, unsigned int *in ){
 
     for (int i = 0; i<tam; i++){
@@ -487,7 +484,6 @@ __device__ void AES_128(aesBlock *m, unsigned int *keys, int index){
             8, 5, 2, 15 
             };
         
-        // __syncthreads(); preguntar porque esto hace que nada salga
         unsigned int block[4];
 
         for (int i = 0 ; i< 4 ; i++){
@@ -496,11 +492,8 @@ __device__ void AES_128(aesBlock *m, unsigned int *keys, int index){
         
         addRoundKey( block, keys,0);
         for (int j = 1; j < 10; j++){
-            // subBytes(block, matrizCajaS);
             shiftRows(block, shifttab);
-            //mixColumns(block);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
-
             addRoundKey( block, keys,j); // 
         }
         subBytes(block, matrizCajaS);
@@ -524,15 +517,11 @@ __device__ void OCBAESDelta1Rounds(unsigned int block[4],  unsigned int *keys){
             4, 1, 14, 11,
             8, 5, 2, 15 
             };
-        // addRoundKey( block, keys,0);
         for (int j = 1; j < 2; j++){
             shiftRows(block, shifttab);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
             addRoundKey( block, keys,j); // 
         }
-        // subBytes(block, matrizCajaS);
-        // shiftRows(block, shifttab);
-        // addRoundKey( block, keys,10);
 }
 
 __device__ void AES_128Decrypt(aesBlock *m, unsigned int *keys, int index ){
@@ -561,11 +550,8 @@ __device__ void AES_128Decrypt(aesBlock *m, unsigned int *keys, int index ){
         
         addRoundKey( block, keys,10);
         for (int j = 9; j > 0; j--){
-            // subBytes(block, matrizCajaS);
             shiftRows(block, shifttab);
-            // mixColumns(block);
             subBytesMixColumns(block,  T1,  T2,  T3,  T4);
-
             InvAddRoundKey(block, keys,j);
 
         }
@@ -687,7 +673,6 @@ __global__ void OCB128EncryptRandomAccesAsociatedData(aesBlock *ad,aesBlock *del
     unsigned long long deltaIndex = floor( (double) index/64);//esto se cambia para aes 1 ronda
 
     if( index< (adlenMultiplo16/16)){
-        // if( index==0){
 
         
         __syncthreads();
@@ -710,7 +695,6 @@ __global__ void OCB128EncryptRandomAccesAsociatedData(aesBlock *ad,aesBlock *del
             XOR_128(ad[index].block,deltaBlock);
 
             AES_128(ad, keys,index);
-            // imprimiArregloCudaInt(16,ad[index].block);
 
         }else{
             //calculo lamda 5
@@ -722,7 +706,6 @@ __global__ void OCB128EncryptRandomAccesAsociatedData(aesBlock *ad,aesBlock *del
             XOR_128(ad[index].block,deltaBlock);
 
             AES_128(ad, keys,index);
-            // imprimiArregloCudaInt(16,ad[index].block);
         }
         
     }
@@ -739,7 +722,6 @@ __global__ void OCB128DecryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned l
             for (int i = 0 ; i< 4 ; i++){
                 deltaBlock[i]= delta[deltaIndex].block[i]+index;
             }
-            // falta añadir el checksum y si los bloques no vienen completos
     
             OCBAESDelta1Rounds(deltaBlock, keys);
     
@@ -760,13 +742,7 @@ __global__ void OCB128DecryptRandomAcces(aesBlock *m,aesBlock *delta, unsigned l
             }
             
             OCBAESDelta1Rounds(aestemp[0].block, keys);
-
-
             AES_128(aestemp, keys,0);
-
-            // imprimiArregloCudaInt(4,m[index].block);
-            // imprimiArregloCudaInt(4,delta[deltaIndex].block);
-
             XOR_128(m[index].block,aestemp[0].block);
             
             for (int i = 0 ; i< 4 ; i++){
@@ -1273,10 +1249,6 @@ int crypto_aead_decrypt(
     OCBRandomAccessDecrypt(encrypt, delta, clen, clen2, deltalen, &keys[0][0]);
 
     checksum (encrypt, numBlocks, sumcheck[0].block );
-
-   
-    
-    
 
     OCBRandomAccessGetTag(sumcheck, delta, S, mcomplete, clen2, deltalen, &keys[0][0]);
 

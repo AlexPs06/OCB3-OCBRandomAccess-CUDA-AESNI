@@ -154,16 +154,9 @@ int main(int argc, char **argv)
 	len = iter_list[0];
 	double prom_time = 0;
 	while (len >= 0) {
-		// if (len == 1073741824)
-		// {
-		// 	iters=100;
-		// }
-			
 	
 		do {
 
-			// printf(" iters %lli --  \n",iters );fflush(stdout);
-			
 			prom_time = 0;
 			ae_encrypt(ctx, nonce, pt, len, NULL, 0, pt, tag, 1);
 			c = clock();
@@ -174,8 +167,6 @@ int main(int argc, char **argv)
 			c = clock() - c;
 			sec = c/(double)CLOCKS_PER_SEC;
 			tmpd = (sec * Hz) / ((double)len * iters);
-			// printf("tmpd -- %6.5f\n\n",tmpd);fflush(stdout);
-			// printf("sec -- %6.10f\n\n",sec/iters);fflush(stdout);
 			prom_time = sec/iters;
 			
 			if (len == 1073741824 || len == 1073741824+1073741824/2 ){
@@ -184,9 +175,6 @@ int main(int argc, char **argv)
 
 			if ((sec < 1.2)||(sec > 1.3))
 				iters = (int)(iters * 5.0/(4.0 * sec));
-			
-			
-		// printf("%lli -- %.5f  (%6.5f cpb) time_prom %6.10f seconds\n",len,sec,tmpd,prom_time );fflush(stdout);
 		
 		} while ((sec < 1.2) || (sec > 1.3));
 		
